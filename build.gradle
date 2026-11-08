@@ -1,12 +1,15 @@
 buildscript {
-    // Removed the repositories block here to prevent conflict with settings.gradle
+    repositories {
+        google()
+        mavenCentral()
+    }
     dependencies {
         classpath "com.android.tools.build:gradle:8.1.1"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0"
     }
 }
 
-// Removed the allprojects { repositories { ... } } block entirely
+// Notice there is NO 'allprojects { repositories { ... } }' block here anymore.
 
 task clean(type: Delete) {
     delete rootProject.buildDir
