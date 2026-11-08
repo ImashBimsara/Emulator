@@ -28,7 +28,7 @@ class MainActivity : AppCompatActivity() {
             val exePath = etExePath.text.toString()
 
             if (gameName.isNotEmpty() && exePath.isNotEmpty()) {
-                createDirectGameShortcut(this, gameName, exePath, android.R.drawable.ic_menu_play)
+                createDirectGameShortcut(this, gameName, exePath, android.R.drawable.ic_media_play)
                 Toast.makeText(this, "Shortcut added to Home Screen!", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "Please enter game name and .exe path", Toast.LENGTH_SHORT).show()
