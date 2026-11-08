@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center">
+
+    <EditText
+        android:id="@+id/etGameName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Game Name"
+        android:inputType="text"
+        android:layout_marginBottom="16dp"/>
+
+    <EditText
+        android:id="@+id/etExePath"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter .exe or Installer Path"
+        android:inputType="text"
+        android:layout_marginBottom="24dp"/>
+
+    <Button
+        android:id="@+id/btnSelectGame"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Add to Home Screen Shortcut"
+        android:layout_marginBottom="12dp"/>
+
+    <Button
+        android:id="@+id/btnInstallGame"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Install Game Automatically"/>
+
+</LinearLayout>
