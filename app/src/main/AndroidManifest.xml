@@ -8,6 +8,7 @@
         android:label="Custom Emulator"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.NoActionBar">
+        <service android:name=".MainActivity$ExtractionService" />
         
         <activity
             android:name=".MainActivity"
