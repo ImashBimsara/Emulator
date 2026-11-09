@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permissions -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -33,7 +32,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Service එක register කිරීම -->
         <service 
             android:name=".ExtractionService"
             android:foregroundServiceType="dataSync"
