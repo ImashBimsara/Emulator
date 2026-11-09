@@ -16,10 +16,11 @@ object AssetExtractor {
         
         Log.e(TAG, "Extraction Process Started!")
 
-        if (destDir.exists() && destDir.listFiles()?.isNotEmpty() == true) {
-            Log.e(TAG, "Already extracted! Skipping...")
-            return
+        // පරණ ෆෝල්ඩර් එක තියෙනවා නම් මකන්න
+        if (destDir.exists()) {
+            destDir.deleteRecursively()
         }
+        destDir.mkdirs()
         
         destDir.mkdirs()
 
