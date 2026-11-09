@@ -2,14 +2,15 @@ package com.your.customemulator
 
 import android.content.Context
 import android.util.Log
-import com.github.junrar.Archive
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 
 object AssetExtractor {
-    // අපි මේ TAG එක Logcat එකේ හොයන්න ඕනේ
-    private const val TAG = "MY_EXTRACTOR_TEST" 
+    private const val TAG = "MY_EXTRACTOR_TEST"
 
     fun extractAssets(context: Context) {
         val destDir = File(context.filesDir, "imagefs")
@@ -26,42 +27,55 @@ object AssetExtractor {
         destDir.mkdirs()
 
         try {
-            // 1. අපි පළවෙනි පාරට ටෙස්ට් එකක් විදිහට box64 folder එක copy කරමු
-            Log.e(TAG, "Copying box64 folder...")
-            copyAssetFolder(context, "box64", File(destDir, "box64"))
-            Log.e(TAG, "box64 folder copy finished.")
+            // 1. Tzst files extract කිරීම
+            Log.e(TAG, "Extracting rootfs.tzst...")
+            extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
+            
+            Log.e(TAG, "Extracting rootfs_patches.tzst...")
+            extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
 
-            // 2. ඊට පස්සේ RAR එක extract කරමු
-            Log.e(TAG, "Extracting rootfs.rar...")
-            extractRar(context, "rootfs", File(destDir, "rootfs"))
-            Log.e(TAG, "rootfs extraction finished.")
+            // 2. අනිත් සාමාන්‍ය folders copy කිරීම
+            val normalAssets = arrayOf("box64", "dxwrapper", "graphics_driver", "inputcontrols", "soundfont", "wallpapers", "wincomponents")
+            for (asset in normalAssets) {
+                copyAssetFolder(context, asset, File(destDir, asset))
+            }
 
+            Log.e(TAG, "Extraction completed successfully!")
         } catch (e: Exception) {
-            // වැරැද්දක් ආවොත් මේකෙන් Logcat එකට රතු පාටින් එනවා
-            Log.e(TAG, "ERROR DETECTED: ${e.message}", e)
+            Log.e(TAG, "CRITICAL ERROR: ${e.message}", e)
         }
     }
 
-    private fun extractRar(context: Context, assetName: String, destFile: File) {
+    // .tzst (Zstandard Tar) extract කරන function එක
+    private fun extractTzst(context: Context, assetName: String, destFile: File) {
         try {
-            val inputStream = context.assets.open(assetName)
-            val archive = Archive(inputStream)
-            
-            for (fileHeader in archive.fileHeaders) {
-                val outFile = File(destFile, fileHeader.fileName)
-                if (fileHeader.isDirectory) {
+            val inputStream: InputStream = context.assets.open(assetName)
+            val bufferedInputStream = BufferedInputStream(inputStream)
+            val zstdInputStream = ZstdCompressorInputStream(bufferedInputStream)
+            val tarInputStream = TarArchiveInputStream(zstdInputStream)
+
+            var entry = tarInputStream.nextEntry
+            while (entry != null) {
+                val outFile = File(destFile, entry.name)
+                
+                if (entry.isDirectory) {
                     outFile.mkdirs()
                 } else {
                     outFile.parentFile?.mkdirs()
                     val out = FileOutputStream(outFile)
-                    archive.extractFile(fileHeader, out)
+                    val buffer = ByteArray(8192)
+                    var len: Int
+                    while (tarInputStream.read(buffer).also { len = it } > 0) {
+                        out.write(buffer, 0, len)
+                    }
                     out.close()
                 }
+                entry = tarInputStream.nextEntry
             }
-            archive.close()
+            tarInputStream.close()
             Log.e(TAG, "Successfully extracted $assetName")
         } catch (e: Exception) {
-            Log.e(TAG, "Error extracting $assetName", e)
+            Log.e(TAG, "Error extracting $assetName: ${e.message}", e)
         }
     }
 
