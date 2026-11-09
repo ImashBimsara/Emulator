@@ -17,7 +17,6 @@ object AssetExtractor {
         
         Log.e(TAG, "Extraction Process Started!")
 
-        // දැනටමත් extract වෙලා නම් ආයේ කරන්නේ නෑ
         if (destDir.exists() && destDir.listFiles()?.isNotEmpty() == true) {
             Log.e(TAG, "Already extracted! Skipping...")
             return
@@ -42,48 +41,48 @@ object AssetExtractor {
 
             Log.e(TAG, "Extraction completed successfully!")
         } catch (e: Exception) {
-            // Error එක MainActivity එකට යවන්න, එතකොට Toast එකේ පේනවා
             Log.e(TAG, "CRITICAL ERROR: ${e.message}", e)
             throw e 
         }
     }
 
     private fun extractTzst(context: Context, assetName: String, destFile: File) {
-    try {
-        Thread.sleep(1000) 
-        context.assets.open(assetName).use { inputStream ->
-            BufferedInputStream(inputStream, 8192).use { bufferedInputStream ->
-                ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
-                    TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
-                        
-                        var entry = tarInputStream.nextEntry
-                        while (entry != null) {
-                            val outFile = File(destFile, entry.name)
+        try {
+            Thread.sleep(1000) // තත්පරයක් ඉන්නවා Toast එක පේන්න
+            context.assets.open(assetName).use { inputStream ->
+                BufferedInputStream(inputStream, 8192).use { bufferedInputStream ->
+                    ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
+                        TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
                             
-                            if (entry.isDirectory) {
-                                outFile.mkdirs()
-                            } else {
-                                outFile.parentFile?.mkdirs()
-                                FileOutputStream(outFile).use { out ->
-                                    val buffer = ByteArray(4096)
-                                    var len: Int
-                                    while (tarInputStream.read(buffer).also { len = it } > 0) {
-                                        out.write(buffer, 0, len)
+                            var entry = tarInputStream.nextEntry
+                            while (entry != null) {
+                                // ෆයිල් නම හරියටම ගන්නවා
+                                val outFile = File(destFile, entry.name)
+                                
+                                if (entry.isDirectory) {
+                                    outFile.mkdirs()
+                                } else {
+                                    outFile.parentFile?.mkdirs()
+                                    FileOutputStream(outFile).use { out ->
+                                        val buffer = ByteArray(4096)
+                                        var len: Int
+                                        while (tarInputStream.read(buffer).also { len = it } > 0) {
+                                            out.write(buffer, 0, len)
+                                        }
                                     }
                                 }
+                                entry = tarInputStream.nextEntry
                             }
-                            entry = tarInputStream.nextEntry
                         }
                     }
                 }
             }
+            Log.e(TAG, "Successfully extracted $assetName")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting $assetName: ${e.message}", e)
+            throw e 
         }
-        Log.e(TAG, "Successfully extracted $assetName")
-    } catch (e: Exception) {
-        Log.e(TAG, "Error extracting $assetName: ${e.message}", e)
-        throw e 
     }
-}
 
     private fun copyAssetFolder(context: Context, assetPath: String, destFolder: File) {
         val files = context.assets.list(assetPath)
