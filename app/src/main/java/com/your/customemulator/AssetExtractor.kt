@@ -1,7 +1,6 @@
 package com.your.customemulator
 
 import android.content.Context
-import android.util.Log
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream
 import java.io.BufferedInputStream
@@ -9,32 +8,37 @@ import java.io.File
 import java.io.FileOutputStream
 
 object AssetExtractor {
-    private const val TAG = "MY_EXTRACTOR_TEST"
+    private const val TAG = "AssetExtractor"
 
     fun extractAssets(context: Context) {
         val destDir = File(context.filesDir, "imagefs")
         
-        Log.e(TAG, "Extraction Process Started!")
+        Logger.log(context, "--- Extraction Process Started ---")
 
         // පරණ ෆෝල්ඩර් එක මකන්න
         if (destDir.exists()) {
+            Logger.log(context, "Deleting old imagefs folder...")
             destDir.deleteRecursively()
         }
         destDir.mkdirs()
 
         try {
-            Log.e(TAG, "Extracting rootfs.tzst...")
+            Logger.log(context, "Extracting rootfs.tzst...")
             extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
 
-            // අනිත් folders copy කරන්න
+            Logger.log(context, "Copying normal assets...")
             val normalAssets = arrayOf("box64", "dxwrapper", "graphics_driver", "inputcontrols", "soundfont", "wallpapers", "wincomponents")
             for (asset in normalAssets) {
+                Logger.log(context, "Copying folder: $asset")
                 copyAssetFolder(context, asset, File(destDir, asset))
             }
 
-            Log.e(TAG, "Extraction completed successfully!")
+            Logger.log(context, "--- Extraction Completed Successfully ---")
         } catch (e: Exception) {
-            Log.e(TAG, "CRITICAL ERROR: ${e.message}", e)
+            Logger.log(context, "CRITICAL ERROR: ${e.message}")
+            e.stackTrace.forEach { element ->
+                Logger.log(context, "  at $element")
+            }
             throw e 
         }
     }
@@ -47,6 +51,7 @@ object AssetExtractor {
                         TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
                             
                             var entry = tarInputStream.nextEntry
+                            var count = 0
                             while (entry != null) {
                                 var entryName = entry.name
                                 if (entryName.startsWith("./")) {
@@ -67,15 +72,16 @@ object AssetExtractor {
                                         }
                                     }
                                 }
+                                count++
                                 entry = tarInputStream.nextEntry
                             }
+                            Logger.log(context, "Successfully extracted $assetName. Total entries: $count")
                         }
                     }
                 }
             }
-            Log.e(TAG, "Successfully extracted $assetName")
         } catch (e: Exception) {
-            Log.e(TAG, "Error extracting $assetName: ${e.message}", e)
+            Logger.log(context, "Error extracting $assetName: ${e.message}")
             throw e 
         }
     }
@@ -104,7 +110,7 @@ object AssetExtractor {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error copying file $assetPath", e)
+            Logger.log(context, "Error copying file $assetPath: ${e.message}")
         }
     }
 }
