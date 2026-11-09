@@ -17,12 +17,31 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // 1. අලුතින් එකතු කරපු Signing Configs
+    signingConfigs {
+        release {
+            // මේවා GitHub Actions එකෙන් command line හරහා එන නිසා දැනට හිස්ව තියන්න පුළුවන්.
+            // ඒත් Android Studio එකෙන් build කරනකොට error එකක් එන නිසා මේ විදිහට ලියන්න.
+            storeFile file(System.getenv("KEYSTORE_FILE") ?: "my-release-key.jks")
+            storePassword System.getenv("KEYSTORE_PASSWORD")
+            keyAlias System.getenv("KEY_ALIAS")
+            keyPassword System.getenv("KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            
+            // 2. Release build එකට අපි හදපු signing config එක දෙනවා
+            signingConfig signingConfigs.release
+        }
+        debug {
+            // Debug build එකටත් අවශ්‍ය නම් මෙතනින් වෙනස් කරන්න පුළුවන් (අවශ්‍ය නෑ)
         }
     }
+    
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
