@@ -16,17 +16,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
-    // WakeLock එක සඳහා variable එකක්
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // App එක open වෙද්දීම Native Files Extract කරනවා
         setupNativeEnvironment()
 
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
@@ -59,17 +58,22 @@ class MainActivity : AppCompatActivity() {
     private fun setupNativeEnvironment() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. WakeLock එක ගන්නවා - ස්ක්‍රීන් එක off වෙන එක නවත්තන්න
                 val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
                 wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CustomEmulator::Extraction")
-                wakeLock?.acquire(30 * 60 * 1000L) // විනාඩි 30ක්
+                wakeLock?.acquire(30 * 60 * 1000L)
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "Extracting Emulator Files...", Toast.LENGTH_LONG).show()
                 }
 
-                // 2. Extract කරනවා
-                AssetExtractor.extractAssets(this@MainActivity)
+                // 1. අපි මුලින්ම rootfs.tzst එක filesDir එකට copy කරමු
+                val tzstFile = File(filesDir, "rootfs.tzst")
+                if (!tzstFile.exists()) {
+                    copyAssetToFile(this@MainActivity, "rootfs.tzst", tzstFile)
+                }
+
+                // 2. දැන් අපි ඒ ෆයිල් එක extract කරමු
+                AssetExtractor.extractAssets(this@MainActivity, tzstFile)
                 
                 // 3. Ready ද බලනවා
                 val imagefsDir = File(filesDir, "imagefs")
@@ -86,11 +90,23 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, "Extraction Error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             } finally {
-                // 4. WakeLock එක අත්හරිනවා
                 if (wakeLock?.isHeld == true) {
                     wakeLock?.release()
                 }
                 wakeLock = null
+            }
+        }
+    }
+
+    // Asset එකක් ෆෝන් එකේ storage එකට copy කරන function එක
+    private fun copyAssetToFile(context: Context, assetName: String, destFile: File) {
+        context.assets.open(assetName).use { inputStream ->
+            FileOutputStream(destFile).use { outputStream ->
+                val buffer = ByteArray(8192)
+                var length: Int
+                while (inputStream.read(buffer).also { length = it } > 0) {
+                    outputStream.write(buffer, 0, length)
+                }
             }
         }
     }
