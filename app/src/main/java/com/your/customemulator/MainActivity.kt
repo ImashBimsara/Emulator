@@ -1,36 +1,32 @@
 package com.your.customemulator
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
+
+    // WakeLock එක සඳහා variable එකක්
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 1. Notification Permission එක අහනවා (Android 13+ සඳහා)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-            }
-        }
-
-        // 2. App එක open වෙද්දීම Service එක start කරනවා
+        // App එක open වෙද්දීම Native Files Extract කරනවා
         setupNativeEnvironment()
 
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
@@ -61,11 +57,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupNativeEnvironment() {
-        val intent = Intent(this, ExtractionService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // 1. WakeLock එක ගන්නවා - ස්ක්‍රීන් එක off වෙන එක නවත්තන්න
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CustomEmulator::Extraction")
+                wakeLock?.acquire(30 * 60 * 1000L) // විනාඩි 30ක්
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Extracting Emulator Files...", Toast.LENGTH_LONG).show()
+                }
+
+                // 2. Extract කරනවා
+                AssetExtractor.extractAssets(this@MainActivity)
+                
+                // 3. Ready ද බලනවා
+                val imagefsDir = File(filesDir, "imagefs")
+                val isRootfsReady = File(imagefsDir, "rootfs").exists()
+                val isWineReady = File(imagefsDir, "rootfs/usr/bin/wine64").exists()
+                
+                withContext(Dispatchers.Main) {
+                    val msg = "Done!\nRootfs: $isRootfsReady\nWine: $isWineReady"
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Extraction Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                // 4. WakeLock එක අත්හරිනවා
+                if (wakeLock?.isHeld == true) {
+                    wakeLock?.release()
+                }
+                wakeLock = null
+            }
         }
     }
 
