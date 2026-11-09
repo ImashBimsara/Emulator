@@ -16,21 +16,17 @@ object AssetExtractor {
         
         Log.e(TAG, "Extraction Process Started!")
 
-        // පරණ ෆෝල්ඩර් එක තියෙනවා නම් මකන්න
+        // පරණ ෆෝල්ඩර් එක මකන්න
         if (destDir.exists()) {
             destDir.deleteRecursively()
         }
-        destDir.mkdirs()
-        
         destDir.mkdirs()
 
         try {
             Log.e(TAG, "Extracting rootfs.tzst...")
             extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
 
-            Log.e(TAG, "Extracting rootfs_patches.tzst...")
-            extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
-
+            // අනිත් folders copy කරන්න
             val normalAssets = arrayOf("box64", "dxwrapper", "graphics_driver", "inputcontrols", "soundfont", "wallpapers", "wincomponents")
             for (asset in normalAssets) {
                 copyAssetFolder(context, asset, File(destDir, asset))
@@ -52,7 +48,12 @@ object AssetExtractor {
                             
                             var entry = tarInputStream.nextEntry
                             while (entry != null) {
-                                val outFile = File(destFile, entry.name)
+                                var entryName = entry.name
+                                if (entryName.startsWith("./")) {
+                                    entryName = entryName.substring(2)
+                                }
+                                
+                                val outFile = File(destFile, entryName)
                                 
                                 if (entry.isDirectory) {
                                     outFile.mkdirs()
