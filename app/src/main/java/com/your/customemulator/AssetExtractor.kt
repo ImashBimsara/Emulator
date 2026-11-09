@@ -27,14 +27,15 @@ object AssetExtractor {
         destDir.mkdirs()
 
         try {
-            // 1. Tzst files extract කිරීම
+            // 1. rootfs එක extract කරනවා (මෙතනදී අපි ෆයිල් එක ඇතුළේ තියෙන ෆෝල්ඩර්ස් කෙළින්ම destDir එකට ගන්නවා)
             Log.e(TAG, "Extracting rootfs.tzst...")
-            extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
-            
-            Log.e(TAG, "Extracting rootfs_patches.tzst...")
-            extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
+            extractTzst(context, "rootfs.tzst", destDir)
 
-            // 2. අනිත් සාමාන්‍ය folders copy කිරීම
+            // 2. rootfs_patches
+            Log.e(TAG, "Extracting rootfs_patches.tzst...")
+            extractTzst(context, "rootfs_patches.tzst", destDir)
+
+            // 3. අනිත් සාමාන්‍ය folders
             val normalAssets = arrayOf("box64", "dxwrapper", "graphics_driver", "inputcontrols", "soundfont", "wallpapers", "wincomponents")
             for (asset in normalAssets) {
                 copyAssetFolder(context, asset, File(destDir, asset))
@@ -46,7 +47,6 @@ object AssetExtractor {
         }
     }
 
-    // .tzst (Zstandard Tar) extract කරන function එක
     private fun extractTzst(context: Context, assetName: String, destFile: File) {
         try {
             val inputStream: InputStream = context.assets.open(assetName)
