@@ -16,7 +16,6 @@ object AssetExtractor {
         val destDir = File(context.filesDir, "imagefs")
         
         Log.e(TAG, "Extraction Process Started!")
-        Log.e(TAG, "Destination Path: ${destDir.absolutePath}")
 
         // දැනටමත් extract වෙලා නම් ආයේ කරන්නේ නෑ
         if (destDir.exists() && destDir.listFiles()?.isNotEmpty() == true) {
@@ -27,7 +26,7 @@ object AssetExtractor {
         destDir.mkdirs()
 
         try {
-            // 1. rootfs එක extract කරනවා (මෙතනදී අපි ෆයිල් එක ඇතුළේ තියෙන ෆෝල්ඩර්ස් කෙළින්ම destDir එකට ගන්නවා)
+            // 1. rootfs එක extract කරනවා
             Log.e(TAG, "Extracting rootfs.tzst...")
             extractTzst(context, "rootfs.tzst", destDir)
 
@@ -43,39 +42,47 @@ object AssetExtractor {
 
             Log.e(TAG, "Extraction completed successfully!")
         } catch (e: Exception) {
+            // Error එක MainActivity එකට යවන්න, එතකොට Toast එකේ පේනවා
             Log.e(TAG, "CRITICAL ERROR: ${e.message}", e)
+            throw e 
         }
     }
 
     private fun extractTzst(context: Context, assetName: String, destFile: File) {
         try {
-            val inputStream: InputStream = context.assets.open(assetName)
-            val bufferedInputStream = BufferedInputStream(inputStream)
-            val zstdInputStream = ZstdCompressorInputStream(bufferedInputStream)
-            val tarInputStream = TarArchiveInputStream(zstdInputStream)
-
-            var entry = tarInputStream.nextEntry
-            while (entry != null) {
-                val outFile = File(destFile, entry.name)
-                
-                if (entry.isDirectory) {
-                    outFile.mkdirs()
-                } else {
-                    outFile.parentFile?.mkdirs()
-                    val out = FileOutputStream(outFile)
-                    val buffer = ByteArray(8192)
-                    var len: Int
-                    while (tarInputStream.read(buffer).also { len = it } > 0) {
-                        out.write(buffer, 0, len)
+            // use { } block එකෙන් ෆයිල්ස් හරියට close වෙනවා
+            context.assets.open(assetName).use { inputStream ->
+                BufferedInputStream(inputStream, 8192).use { bufferedInputStream ->
+                    ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
+                        TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
+                            
+                            var entry = tarInputStream.nextEntry
+                            while (entry != null) {
+                                val outFile = File(destFile, entry.name)
+                                
+                                if (entry.isDirectory) {
+                                    outFile.mkdirs()
+                                } else {
+                                    outFile.parentFile?.mkdirs()
+                                    
+                                    FileOutputStream(outFile).use { out ->
+                                        val buffer = ByteArray(4096) // පොඩි buffer එකක් ගන්නවා
+                                        var len: Int
+                                        while (tarInputStream.read(buffer).also { len = it } > 0) {
+                                            out.write(buffer, 0, len)
+                                        }
+                                    }
+                                }
+                                entry = tarInputStream.nextEntry
+                            }
+                        }
                     }
-                    out.close()
                 }
-                entry = tarInputStream.nextEntry
             }
-            tarInputStream.close()
             Log.e(TAG, "Successfully extracted $assetName")
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting $assetName: ${e.message}", e)
+            throw e
         }
     }
 
@@ -93,15 +100,15 @@ object AssetExtractor {
 
     private fun copyAssetFile(context: Context, assetPath: String, destFile: File) {
         try {
-            val inputStream: InputStream = context.assets.open(assetPath)
-            val outputStream = FileOutputStream(destFile)
-            val buffer = ByteArray(8192)
-            var length: Int
-            while (inputStream.read(buffer).also { length = it } > 0) {
-                outputStream.write(buffer, 0, length)
+            context.assets.open(assetPath).use { inputStream ->
+                FileOutputStream(destFile).use { outputStream ->
+                    val buffer = ByteArray(4096)
+                    var length: Int
+                    while (inputStream.read(buffer).also { length = it } > 0) {
+                        outputStream.write(buffer, 0, length)
+                    }
+                }
             }
-            outputStream.close()
-            inputStream.close()
         } catch (e: Exception) {
             Log.e(TAG, "Error copying file $assetPath", e)
         }
