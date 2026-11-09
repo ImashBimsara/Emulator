@@ -3,7 +3,6 @@ package com.your.customemulator
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.os.PowerManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
@@ -16,16 +15,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
-
-    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // App එක open වෙද්දීම Error එකක් ආවොත් ඒක පෙන්නන්න
         setupNativeEnvironment()
 
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
@@ -56,61 +53,52 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupNativeEnvironment() {
-        // App එක open වෙද්දී පරණ අසම්පූර්ණ ෆයිල්ස් ටික මකන්න
-        val imagefsDir = File(filesDir, "imagefs")
-        if (imagefsDir.exists()) {
-            imagefsDir.deleteRecursively()
-        }
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CustomEmulator::Extraction")
-                wakeLock?.acquire(30 * 60 * 1000L)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Checking files...", Toast.LENGTH_SHORT).show()
+                }
+
+                // 1. ෆෝල්ඩර් එක තියෙනවද බලනවා
+                val imagefsDir = File(filesDir, "imagefs")
+                if (!imagefsDir.exists()) {
+                    imagefsDir.mkdirs()
+                }
+
+                // 2. assets එකේ rootfs.tzst එක තියෙනවද බලනවා
+                val assetFiles = assets.list("") ?: arrayOf()
+                val hasRootfs = assetFiles.contains("rootfs.tzst")
+                val hasPatches = assetFiles.contains("rootfs_patches.tzst")
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Extracting Emulator Files...", Toast.LENGTH_LONG).show()
+                    if (!hasRootfs) {
+                        Toast.makeText(this@MainActivity, "Error: rootfs.tzst NOT FOUND in assets!", Toast.LENGTH_LONG).show()
+                        return@withContext
+                    }
                 }
 
-                // 1. අපි මුලින්ම rootfs.tzst එක filesDir එකට copy කරමු
-                val tzstFile = File(filesDir, "rootfs.tzst")
-                if (!tzstFile.exists()) {
-                    copyAssetToFile(this@MainActivity, "rootfs.tzst", tzstFile)
+                // 3. Extract කරන්න පටන් ගන්නවා
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Found files. Extracting... Please wait.", Toast.LENGTH_LONG).show()
                 }
 
-                // 2. දැන් අපි ඒ ෆයිල් එක extract කරමු
                 AssetExtractor.extractAssets(this@MainActivity)
                 
-                // 3. Ready ද බලනවා
-                val imagefsDir = File(filesDir, "imagefs")
-                val isRootfsReady = File(imagefsDir, "rootfs").exists()
+                // 4. ඉවර වුණාට පස්සේ check කරනවා
                 val isWineReady = File(imagefsDir, "rootfs/usr/bin/wine64").exists()
                 
                 withContext(Dispatchers.Main) {
-                    val msg = "Done!\nRootfs: $isRootfsReady\nWine: $isWineReady"
-                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                    if (isWineReady) {
+                        Toast.makeText(this@MainActivity, "SUCCESS! Wine is ready.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Extraction failed. Wine not found.", Toast.LENGTH_LONG).show()
+                    }
                 }
 
             } catch (e: Exception) {
+                // මොනවා හරි Error එකක් ආවොත් ඒක පෙන්නන්න
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Extraction Error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            } finally {
-                if (wakeLock?.isHeld == true) {
-                    wakeLock?.release()
-                }
-                wakeLock = null
-            }
-        }
-    }
-
-    // Asset එකක් ෆෝන් එකේ storage එකට copy කරන function එක
-    private fun copyAssetToFile(context: Context, assetName: String, destFile: File) {
-        context.assets.open(assetName).use { inputStream ->
-            FileOutputStream(destFile).use { outputStream ->
-                val buffer = ByteArray(8192)
-                var length: Int
-                while (inputStream.read(buffer).also { length = it } > 0) {
-                    outputStream.write(buffer, 0, length)
+                    Toast.makeText(this@MainActivity, "CRASH ERROR: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
