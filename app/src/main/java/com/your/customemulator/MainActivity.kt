@@ -56,6 +56,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupNativeEnvironment() {
+        // App එක open වෙද්දී පරණ අසම්පූර්ණ ෆයිල්ස් ටික මකන්න
+        val imagefsDir = File(filesDir, "imagefs")
+        if (imagefsDir.exists()) {
+            imagefsDir.deleteRecursively()
+        }
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
