@@ -37,59 +37,59 @@ object AssetExtractor {
     }
 
     private fun extractTzst(context: Context, assetName: String, destFile: File) {
-        try {
-            Logger.log(context, "Opening $assetName from assets...")
-            
-            context.assets.open(assetName).use { inputStream ->
-                Logger.log(context, "Creating BufferedInputStream...")
-                BufferedInputStream(inputStream, 16384).use { bufferedInputStream ->
+    try {
+        Logger.log(context, "Opening $assetName from assets...")
+        
+        context.assets.open(assetName).use { inputStream ->
+            Logger.log(context, "Creating BufferedInputStream...")
+            BufferedInputStream(inputStream, 16384).use { bufferedInputStream ->
+                
+                Logger.log(context, "Creating ZstdCompressorInputStream...")
+                // මෙතන අපි buffer size එකක් දෙනවා
+                ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
                     
-                    Logger.log(context, "Creating ZstdCompressorInputStream...")
-                    ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
+                    Logger.log(context, "Creating TarArchiveInputStream...")
+                    TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
                         
-                        Logger.log(context, "Creating TarArchiveInputStream...")
-                        TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
+                        var entry = tarInputStream.nextEntry
+                        var count = 0
+                        
+                        while (entry != null) {
+                            var entryName = entry.name
+                            if (entryName.startsWith("./")) {
+                                entryName = entryName.substring(2)
+                            }
                             
-                            var entry = tarInputStream.nextEntry
-                            var count = 0
+                            val outFile = File(destFile, entryName)
                             
-                            while (entry != null) {
-                                var entryName = entry.name
-                                if (entryName.startsWith("./")) {
-                                    entryName = entryName.substring(2)
-                                }
-                                
-                                val outFile = File(destFile, entryName)
-                                
-                                if (entry.isDirectory) {
-                                    outFile.mkdirs()
-                                } else {
-                                    outFile.parentFile?.mkdirs()
-                                    FileOutputStream(outFile).use { out ->
-                                        val buffer = ByteArray(8192)
-                                        var len: Int
-                                        while (tarInputStream.read(buffer).also { len = it } > 0) {
-                                            out.write(buffer, 0, len)
-                                        }
+                            if (entry.isDirectory) {
+                                outFile.mkdirs()
+                            } else {
+                                outFile.parentFile?.mkdirs()
+                                FileOutputStream(outFile).use { out ->
+                                    val buffer = ByteArray(8192)
+                                    var len: Int
+                                    while (tarInputStream.read(buffer).also { len = it } > 0) {
+                                        out.write(buffer, 0, len)
                                     }
                                 }
-                                count++
-                                
-                                // සෑම 1000කට වරක් log කරන්න
-                                if (count % 1000 == 0) {
-                                    Logger.log(context, "Extracted $count entries so far...")
-                                }
-                                
-                                entry = tarInputStream.nextEntry
                             }
-                            Logger.log(context, "Successfully extracted $assetName. Total entries: $count")
+                            count++
+                            
+                            if (count % 1000 == 0) {
+                                Logger.log(context, "Extracted $count entries so far...")
+                            }
+                            
+                            entry = tarInputStream.nextEntry
                         }
+                        Logger.log(context, "Successfully extracted $assetName. Total entries: $count")
                     }
                 }
             }
-        } catch (e: Exception) {
-            Logger.log(context, "Error extracting $assetName: ${e.message}")
-            throw e 
         }
+    } catch (e: Exception) {
+        Logger.log(context, "Error extracting $assetName: ${e.message}")
+        throw e 
     }
+}
 }
