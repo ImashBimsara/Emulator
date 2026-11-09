@@ -1,4 +1,4 @@
-package com.your.customemulator // ඔයාගේ package name එක දාන්න
+package com.your.customemulator
 
 import android.content.Context
 import android.util.Log
@@ -8,42 +8,40 @@ import java.io.FileOutputStream
 import java.io.InputStream
 
 object AssetExtractor {
-    private const val TAG = "AssetExtractor"
+    // අපි මේ TAG එක Logcat එකේ හොයන්න ඕනේ
+    private const val TAG = "MY_EXTRACTOR_TEST" 
 
-    // ප්‍රධාන extract කරන function එක
     fun extractAssets(context: Context) {
         val destDir = File(context.filesDir, "imagefs")
         
-        // අපි කලින් extract කරලා ඉවරයි නම්, ආයේ කරන්නේ නෑ
+        Log.e(TAG, "Extraction Process Started!")
+        Log.e(TAG, "Destination Path: ${destDir.absolutePath}")
+
+        // දැනටමත් extract වෙලා නම් ආයේ කරන්නේ නෑ
         if (destDir.exists() && destDir.listFiles()?.isNotEmpty() == true) {
-            Log.d(TAG, "Already extracted.")
+            Log.e(TAG, "Already extracted! Skipping...")
             return
         }
         
         destDir.mkdirs()
-        Log.d(TAG, "Extracting assets to: ${destDir.absolutePath}")
 
-        // 1. RAR files (rootfs) extract කිරීම
-        extractRar(context, "rootfs", File(destDir, "rootfs"))
-        extractRar(context, "rootfs_patches", File(destDir, "rootfs_patches"))
+        try {
+            // 1. අපි පළවෙනි පාරට ටෙස්ට් එකක් විදිහට box64 folder එක copy කරමු
+            Log.e(TAG, "Copying box64 folder...")
+            copyAssetFolder(context, "box64", File(destDir, "box64"))
+            Log.e(TAG, "box64 folder copy finished.")
 
-        // 2. අනිත් සාමාන්‍ය folders සහ files extract කිරීම
-        val normalAssets = arrayOf("box64", "dxwrapper", "graphics_driver", "inputcontrols", "soundfont", "wallpapers", "wincomponents", "common_dlls", "gpu_cards", "pulseaudio", "wine_debug_channels", "wine_startmenu")
-        
-        for (asset in normalAssets) {
-            copyAssetFolder(context, asset, File(destDir, asset))
+            // 2. ඊට පස්සේ RAR එක extract කරමු
+            Log.e(TAG, "Extracting rootfs.rar...")
+            extractRar(context, "rootfs", File(destDir, "rootfs"))
+            Log.e(TAG, "rootfs extraction finished.")
+
+        } catch (e: Exception) {
+            // වැරැද්දක් ආවොත් මේකෙන් Logcat එකට රතු පාටින් එනවා
+            Log.e(TAG, "ERROR DETECTED: ${e.message}", e)
         }
-        
-        // තනි files ටික copy කිරීම
-        val singleFiles = arrayOf("container_pattern", "gamepad_models", "gpu_cards")
-        for (file in singleFiles) {
-            copyAssetFile(context, file, File(destDir, file))
-        }
-
-        Log.d(TAG, "Extraction completed!")
     }
 
-    // RAR extract කරන function එක
     private fun extractRar(context: Context, assetName: String, destFile: File) {
         try {
             val inputStream = context.assets.open(assetName)
@@ -61,16 +59,15 @@ object AssetExtractor {
                 }
             }
             archive.close()
+            Log.e(TAG, "Successfully extracted $assetName")
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting $assetName", e)
         }
     }
 
-    // සාමාන්‍ය folder එකක් copy කරන function එක
     private fun copyAssetFolder(context: Context, assetPath: String, destFolder: File) {
         val files = context.assets.list(assetPath)
         if (files.isNullOrEmpty()) {
-            // මේක folder එකක් නෙවෙයි, file එකක්
             copyAssetFile(context, assetPath, destFolder)
         } else {
             destFolder.mkdirs()
@@ -80,7 +77,6 @@ object AssetExtractor {
         }
     }
 
-    // තනි file එකක් copy කරන function එක
     private fun copyAssetFile(context: Context, assetPath: String, destFile: File) {
         try {
             val inputStream: InputStream = context.assets.open(assetPath)
@@ -93,7 +89,7 @@ object AssetExtractor {
             outputStream.close()
             inputStream.close()
         } catch (e: Exception) {
-            Log.e(TAG, "Error copying $assetPath", e)
+            Log.e(TAG, "Error copying file $assetPath", e)
         }
     }
 }
