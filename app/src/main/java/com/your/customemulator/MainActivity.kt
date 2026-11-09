@@ -10,6 +10,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -17,6 +21,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // App එක open වෙද්දීම Native Files (Wine/Box64) Extract කරන්න පටන් ගන්නවා
+        setupNativeEnvironment()
 
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
         val btnInstallGame = findViewById<Button>(R.id.btnInstallGame)
@@ -41,6 +48,25 @@ class MainActivity : AppCompatActivity() {
                 installGameAutomatically(installerPath)
             } else {
                 Toast.makeText(this, "Please enter installer/setup path", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Asset Extractor එක background එකේ run කරන function එක
+    private fun setupNativeEnvironment() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // අපි කලින් හදපු AssetExtractor එක call කරනවා
+                AssetExtractor.extractAssets(this@MainActivity)
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Emulator Core Files Ready!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Error extracting files!", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
