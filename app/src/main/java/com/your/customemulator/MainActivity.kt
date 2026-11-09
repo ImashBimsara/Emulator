@@ -1,19 +1,20 @@
 package com.your.customemulator
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -22,7 +23,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // App එක open වෙද්දීම Native Files (Wine/Box64) Extract කරන්න පටන් ගන්නවා
+        // Notification Permission එක අහන්න (Android 13+ සඳහා)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+
+        // App එක open වෙද්දීම Service එක start කරනවා
         setupNativeEnvironment()
 
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
@@ -53,40 +61,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupNativeEnvironment() {
-        // මේක අපි දැන් Foreground Service එකක් හරහා කරන නිසා, App එක crash වෙන්නේ නෑ
         val intent = Intent(this, ExtractionService::class.java)
-        startService(intent)
-    }
-
-    // අපි අලුතින් හදන Extraction Service එක මෙතන තමයි
-    class ExtractionService : android.app.Service() {
-        override fun onBind(intent: Intent?): android.os.IBinder? = null
-
-        override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-            val notification = android.app.Notification.Builder(this, "extraction_channel")
-                .setContentTitle("Extracting Emulator Files")
-                .setContentText("Please wait, this may take a few minutes...")
-                .setSmallIcon(android.R.drawable.ic_popup_sync)
-                .build()
-
-            startForeground(1, notification)
-
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    AssetExtractor.extractAssets(this@ExtractionService)
-                    
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@ExtractionService, "Emulator Core Files Ready!", Toast.LENGTH_LONG).show()
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@ExtractionService, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
-                } finally {
-                    stopSelf()
-                }
-            }
-            return START_NOT_STICKY
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
         }
     }
 
@@ -108,7 +87,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun installGameAutomatically(installerPath: String) {
         Thread {
-            // අපේ අලුත් Paths ටික
             val imagefsDir = File(filesDir, "imagefs").absolutePath
             val winePrefix = File(filesDir, "wineprefix").absolutePath
             val box64Path = File(imagefsDir, "rootfs/usr/bin/box64").absolutePath
