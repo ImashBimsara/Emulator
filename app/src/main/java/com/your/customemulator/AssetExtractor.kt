@@ -11,8 +11,7 @@ import java.io.FileOutputStream
 object AssetExtractor {
     private const val TAG = "MY_EXTRACTOR_TEST"
 
-    // extractAssets එකට tzstFile එක පැරාමීටරයක් විදිහට එනවා
-    fun extractAssets(context: Context, tzstFile: File) {
+    fun extractAssets(context: Context) {
         val destDir = File(context.filesDir, "imagefs")
         
         Log.e(TAG, "Extraction Process Started!")
@@ -25,8 +24,16 @@ object AssetExtractor {
         destDir.mkdirs()
 
         try {
-            Log.e(TAG, "Extracting rootfs...")
-            extractTzst(tzstFile, destDir)
+            Log.e(TAG, "Extracting rootfs.tzst...")
+            extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
+
+            Log.e(TAG, "Extracting rootfs_patches.tzst...")
+            extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
+
+            val normalAssets = arrayOf("box64", "dxwrapper", "graphics_driver", "inputcontrols", "soundfont", "wallpapers", "wincomponents")
+            for (asset in normalAssets) {
+                copyAssetFolder(context, asset, File(destDir, asset))
+            }
 
             Log.e(TAG, "Extraction completed successfully!")
         } catch (e: Exception) {
@@ -35,9 +42,9 @@ object AssetExtractor {
         }
     }
 
-    private fun extractTzst(tzstFile: File, destFile: File) {
+    private fun extractTzst(context: Context, assetName: String, destFile: File) {
         try {
-            tzstFile.inputStream().use { inputStream ->
+            context.assets.open(assetName).use { inputStream ->
                 BufferedInputStream(inputStream, 8192).use { bufferedInputStream ->
                     ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
                         TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
@@ -64,10 +71,38 @@ object AssetExtractor {
                     }
                 }
             }
-            Log.e(TAG, "Successfully extracted ${tzstFile.name}")
+            Log.e(TAG, "Successfully extracted $assetName")
         } catch (e: Exception) {
-            Log.e(TAG, "Error extracting ${tzstFile.name}: ${e.message}", e)
+            Log.e(TAG, "Error extracting $assetName: ${e.message}", e)
             throw e 
+        }
+    }
+
+    private fun copyAssetFolder(context: Context, assetPath: String, destFolder: File) {
+        val files = context.assets.list(assetPath)
+        if (files.isNullOrEmpty()) {
+            copyAssetFile(context, assetPath, destFolder)
+        } else {
+            destFolder.mkdirs()
+            for (file in files) {
+                copyAssetFolder(context, "$assetPath/$file", File(destFolder, file))
+            }
+        }
+    }
+
+    private fun copyAssetFile(context: Context, assetPath: String, destFile: File) {
+        try {
+            context.assets.open(assetPath).use { inputStream ->
+                FileOutputStream(destFile).use { outputStream ->
+                    val buffer = ByteArray(4096)
+                    var length: Int
+                    while (inputStream.read(buffer).also { length = it } > 0) {
+                        outputStream.write(buffer, 0, length)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error copying file $assetPath", e)
         }
     }
 }
