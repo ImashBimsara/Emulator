@@ -22,7 +22,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // App එක open වෙද්දීම Error එකක් ආවොත් ඒක පෙන්නන්න
+        // පරණ Logs ටික මකලා අලුතෙන් පටන් ගන්න
+        Logger.clearLog(this)
+
         setupNativeEnvironment()
 
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
@@ -55,50 +57,49 @@ class MainActivity : AppCompatActivity() {
     private fun setupNativeEnvironment() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                Logger.log(this@MainActivity, "App started. Checking files...")
+                
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "Checking files...", Toast.LENGTH_SHORT).show()
                 }
 
-                // 1. ෆෝල්ඩර් එක තියෙනවද බලනවා
                 val imagefsDir = File(filesDir, "imagefs")
-                if (!imagefsDir.exists()) {
-                    imagefsDir.mkdirs()
-                }
-
-                // 2. assets එකේ rootfs.tzst එක තියෙනවද බලනවා
                 val assetFiles = assets.list("") ?: arrayOf()
                 val hasRootfs = assetFiles.contains("rootfs.tzst")
-                val hasPatches = assetFiles.contains("rootfs_patches.tzst")
 
-                withContext(Dispatchers.Main) {
-                    if (!hasRootfs) {
-                        Toast.makeText(this@MainActivity, "Error: rootfs.tzst NOT FOUND in assets!", Toast.LENGTH_LONG).show()
-                        return@withContext
+                if (!hasRootfs) {
+                    Logger.log(this@MainActivity, "ERROR: rootfs.tzst NOT FOUND in assets!")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Error: rootfs.tzst NOT FOUND!", Toast.LENGTH_LONG).show()
                     }
+                    return@launch
                 }
 
-                // 3. Extract කරන්න පටන් ගන්නවා
+                Logger.log(this@MainActivity, "Files found. Starting extraction...")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Found files. Extracting... Please wait.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Extracting... Please wait.", Toast.LENGTH_LONG).show()
                 }
 
                 AssetExtractor.extractAssets(this@MainActivity)
                 
-                // 4. ඉවර වුණාට පස්සේ check කරනවා
                 val isWineReady = File(imagefsDir, "rootfs/usr/bin/wine64").exists()
+                Logger.log(this@MainActivity, "Extraction done. Wine ready: $isWineReady")
                 
                 withContext(Dispatchers.Main) {
                     if (isWineReady) {
                         Toast.makeText(this@MainActivity, "SUCCESS! Wine is ready.", Toast.LENGTH_LONG).show()
                     } else {
-                        Toast.makeText(this@MainActivity, "Extraction failed. Wine not found.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "Extraction finished but Wine not found.", Toast.LENGTH_LONG).show()
                     }
                 }
 
             } catch (e: Exception) {
-                // මොනවා හරි Error එකක් ආවොත් ඒක පෙන්නන්න
+                Logger.log(this@MainActivity, "CRASH ERROR: ${e.message}")
+                e.stackTrace.forEach { element ->
+                    Logger.log(this@MainActivity, "  at $element")
+                }
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "CRASH ERROR: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "CRASH: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
