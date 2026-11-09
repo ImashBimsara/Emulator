@@ -50,6 +50,7 @@ object AssetExtractor {
 
     private fun extractTzst(context: Context, assetName: String, destFile: File) {
     try {
+        Thread.sleep(1000) 
         context.assets.open(assetName).use { inputStream ->
             BufferedInputStream(inputStream, 8192).use { bufferedInputStream ->
                 ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
