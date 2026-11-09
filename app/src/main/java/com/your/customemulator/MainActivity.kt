@@ -3,6 +3,7 @@ package com.your.customemulator
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.PowerManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
@@ -17,6 +18,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
+
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,26 +55,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-        // Asset Extractor එක background එකේ run කරන function එක
     private fun setupNativeEnvironment() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Assets extract කරනවා
+                // 1. Screen එක නිදාගන්න දෙන්නේ නැතුව තියාගන්න WakeLock එකක් ගන්නවා
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CustomEmulator::ExtractionLock")
+                wakeLock?.acquire(30 * 60 * 1000L) // විනාඩි 30ක් උපරිම
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Extracting Emulator Files... Please wait.", Toast.LENGTH_LONG).show()
+                }
+
+                // 2. Assets extract කරනවා
                 AssetExtractor.extractAssets(this@MainActivity)
                 
-                // Extract වුණාට පස්සේ ෆෝන් එකේ storage එකේ තියෙන files ගාන බලනවා
+                // 3. Extract වුණාට පස්සේ ෆෝන් එකේ storage එකේ තියෙන files ගාන බලනවා
                 val imagefsDir = File(filesDir, "imagefs")
                 val filesCount = imagefsDir.listFiles()?.size ?: 0
                 val isRootfsReady = File(imagefsDir, "rootfs").exists()
+                val isWineReady = File(imagefsDir, "rootfs/usr/bin/wine64").exists()
                 
                 withContext(Dispatchers.Main) {
-                    val statusMessage = "Ready! Found $filesCount items.\nRootfs ready: $isRootfsReady"
+                    val statusMessage = "Done! Files: $filesCount\nRootfs: $isRootfsReady\nWine: $isWineReady"
                     Toast.makeText(this@MainActivity, statusMessage, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                // 4. වැඩේ ඉවර වුණාම WakeLock එක අත්හැරිය යුතුයි
+                if (wakeLock?.isHeld == true) {
+                    wakeLock?.release()
                 }
             }
         }
@@ -95,9 +112,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun installGameAutomatically(installerPath: String) {
         Thread {
+            // අපේ අලුත් Paths ටික
+            val imagefsDir = File(filesDir, "imagefs").absolutePath
             val winePrefix = File(filesDir, "wineprefix").absolutePath
-            val box64Path = File(filesDir, "usr/bin/box64").absolutePath
-            val winePath = File(filesDir, "usr/bin/wine64").absolutePath
+            val box64Path = File(imagefsDir, "rootfs/usr/bin/box64").absolutePath
+            val winePath = File(imagefsDir, "rootfs/usr/bin/wine64").absolutePath
 
             val installScript = StringBuilder().apply {
                 append("export PROOT_NO_SECURE=1\n")
