@@ -20,18 +20,28 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    # Replaced manual apt install with official Gradle setup
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: 8.7
 
-    # Changed ./gradlew to gradle
-    - name: Build Debug APK
-      run: gradle assembleDebug
+    # 1. GitHub Secrets වල තියෙන Keystore එක decode කරලා file එකක් විදිහට හදනවා
+    - name: Decode Keystore
+      run: |
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/my-release-key.jks
 
-    - name: Upload APK Artifact
+    # 2. Release APK එක හදනවා. ඒක sign වෙන්න අවශ්‍ය විස්තර Secrets වලින් ගන්නවා
+    - name: Build Signed Release APK
+      run: |
+        gradle assembleRelease \
+          -Pandroid.injected.signing.store.file=$(pwd)/app/my-release-key.jks \
+          -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+          -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+          -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+
+    # 3. හදපු Signed APK එක Upload කරනවා
+    - name: Upload Signed APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: app-release-signed
+        path: app/build/outputs/apk/release/app-release.apk
