@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 // 2. දැන් අපි ඒ ෆයිල් එක extract කරමු
-                AssetExtractor.extractAssets(this@MainActivity, tzstFile)
+                AssetExtractor.extractAssets(this@MainActivity)
                 
                 // 3. Ready ද බලනවා
                 val imagefsDir = File(filesDir, "imagefs")
