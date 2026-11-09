@@ -17,6 +17,10 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    aaptOptions {
+        noCompress "tzst"
+    }
+
     // 1. අලුතින් එකතු කරපු Signing Configs
     signingConfigs {
         release {
