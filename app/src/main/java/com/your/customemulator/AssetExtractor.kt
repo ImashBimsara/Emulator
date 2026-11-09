@@ -25,17 +25,10 @@ object AssetExtractor {
         try {
             Logger.log(context, "Extracting rootfs.tzst...")
             extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
+            Logger.log(context, "Finished rootfs.tzst extraction")
 
-            Logger.log(context, "Copying normal assets...")
-            val normalAssets = arrayOf("box64", "dxwrapper", "graphics_driver", "inputcontrols", "soundfont", "wallpapers", "wincomponents")
-            for (asset in normalAssets) {
-                Logger.log(context, "Copying folder: $asset")
-                copyAssetFolder(context, asset, File(destDir, asset))
-            }
-
-            Logger.log(context, "--- Extraction Completed Successfully ---")
         } catch (e: Exception) {
-            Logger.log(context, "CRITICAL ERROR: ${e.message}")
+            Logger.log(context, "CRITICAL ERROR in AssetExtractor: ${e.message}")
             e.stackTrace.forEach { element ->
                 Logger.log(context, "  at $element")
             }
@@ -45,13 +38,21 @@ object AssetExtractor {
 
     private fun extractTzst(context: Context, assetName: String, destFile: File) {
         try {
+            Logger.log(context, "Opening $assetName from assets...")
+            
             context.assets.open(assetName).use { inputStream ->
-                BufferedInputStream(inputStream, 8192).use { bufferedInputStream ->
+                Logger.log(context, "Creating BufferedInputStream...")
+                BufferedInputStream(inputStream, 16384).use { bufferedInputStream ->
+                    
+                    Logger.log(context, "Creating ZstdCompressorInputStream...")
                     ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
+                        
+                        Logger.log(context, "Creating TarArchiveInputStream...")
                         TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
                             
                             var entry = tarInputStream.nextEntry
                             var count = 0
+                            
                             while (entry != null) {
                                 var entryName = entry.name
                                 if (entryName.startsWith("./")) {
@@ -65,7 +66,7 @@ object AssetExtractor {
                                 } else {
                                     outFile.parentFile?.mkdirs()
                                     FileOutputStream(outFile).use { out ->
-                                        val buffer = ByteArray(4096)
+                                        val buffer = ByteArray(8192)
                                         var len: Int
                                         while (tarInputStream.read(buffer).also { len = it } > 0) {
                                             out.write(buffer, 0, len)
@@ -73,6 +74,12 @@ object AssetExtractor {
                                     }
                                 }
                                 count++
+                                
+                                // සෑම 1000කට වරක් log කරන්න
+                                if (count % 1000 == 0) {
+                                    Logger.log(context, "Extracted $count entries so far...")
+                                }
+                                
                                 entry = tarInputStream.nextEntry
                             }
                             Logger.log(context, "Successfully extracted $assetName. Total entries: $count")
@@ -83,34 +90,6 @@ object AssetExtractor {
         } catch (e: Exception) {
             Logger.log(context, "Error extracting $assetName: ${e.message}")
             throw e 
-        }
-    }
-
-    private fun copyAssetFolder(context: Context, assetPath: String, destFolder: File) {
-        val files = context.assets.list(assetPath)
-        if (files.isNullOrEmpty()) {
-            copyAssetFile(context, assetPath, destFolder)
-        } else {
-            destFolder.mkdirs()
-            for (file in files) {
-                copyAssetFolder(context, "$assetPath/$file", File(destFolder, file))
-            }
-        }
-    }
-
-    private fun copyAssetFile(context: Context, assetPath: String, destFile: File) {
-        try {
-            context.assets.open(assetPath).use { inputStream ->
-                FileOutputStream(destFile).use { outputStream ->
-                    val buffer = ByteArray(4096)
-                    var length: Int
-                    while (inputStream.read(buffer).also { length = it } > 0) {
-                        outputStream.write(buffer, 0, length)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Logger.log(context, "Error copying file $assetPath: ${e.message}")
         }
     }
 }
