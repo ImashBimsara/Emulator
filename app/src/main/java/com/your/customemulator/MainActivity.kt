@@ -23,14 +23,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Notification Permission එක අහන්න (Android 13+ සඳහා)
+        // 1. Notification Permission එක අහනවා (Android 13+ සඳහා)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
             }
         }
 
-        // App එක open වෙද්දීම Service එක start කරනවා
+        // 2. App එක open වෙද්දීම Service එක start කරනවා
         setupNativeEnvironment()
 
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
