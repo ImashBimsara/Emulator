@@ -3,7 +3,6 @@ package com.your.customemulator
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.os.PowerManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
@@ -18,8 +17,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
-
-    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,41 +53,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupNativeEnvironment() {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                // 1. Screen එක නිදාගන්න දෙන්නේ නැතුව තියාගන්න WakeLock එකක් ගන්නවා
-                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CustomEmulator::ExtractionLock")
-                wakeLock?.acquire(30 * 60 * 1000L) // විනාඩි 30ක් උපරිම
+        // මේක අපි දැන් Foreground Service එකක් හරහා කරන නිසා, App එක crash වෙන්නේ නෑ
+        val intent = Intent(this, ExtractionService::class.java)
+        startService(intent)
+    }
 
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Extracting Emulator Files... Please wait.", Toast.LENGTH_LONG).show()
-                }
+    // අපි අලුතින් හදන Extraction Service එක මෙතන තමයි
+    class ExtractionService : android.app.Service() {
+        override fun onBind(intent: Intent?): android.os.IBinder? = null
 
-                // 2. Assets extract කරනවා
-                AssetExtractor.extractAssets(this@MainActivity)
-                
-                // 3. Extract වුණාට පස්සේ ෆෝන් එකේ storage එකේ තියෙන files ගාන බලනවා
-                val imagefsDir = File(filesDir, "imagefs")
-                val filesCount = imagefsDir.listFiles()?.size ?: 0
-                val isRootfsReady = File(imagefsDir, "rootfs").exists()
-                val isWineReady = File(imagefsDir, "rootfs/usr/bin/wine64").exists()
-                
-                withContext(Dispatchers.Main) {
-                    val statusMessage = "Done! Files: $filesCount\nRootfs: $isRootfsReady\nWine: $isWineReady"
-                    Toast.makeText(this@MainActivity, statusMessage, Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            } finally {
-                // 4. වැඩේ ඉවර වුණාම WakeLock එක අත්හැරිය යුතුයි
-                if (wakeLock?.isHeld == true) {
-                    wakeLock?.release()
+        override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+            val notification = android.app.Notification.Builder(this, "extraction_channel")
+                .setContentTitle("Extracting Emulator Files")
+                .setContentText("Please wait, this may take a few minutes...")
+                .setSmallIcon(android.R.drawable.ic_popup_sync)
+                .build()
+
+            startForeground(1, notification)
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    AssetExtractor.extractAssets(this@ExtractionService)
+                    
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@ExtractionService, "Emulator Core Files Ready!", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@ExtractionService, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    stopSelf()
                 }
             }
+            return START_NOT_STICKY
         }
     }
 
