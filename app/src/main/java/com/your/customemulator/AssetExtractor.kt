@@ -7,12 +7,12 @@ import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStre
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 
 object AssetExtractor {
     private const val TAG = "MY_EXTRACTOR_TEST"
 
-    fun extractAssets(context: Context) {
+    // extractAssets එකට tzstFile එක පැරාමීටරයක් විදිහට එනවා
+    fun extractAssets(context: Context, tzstFile: File) {
         val destDir = File(context.filesDir, "imagefs")
         
         Log.e(TAG, "Extraction Process Started!")
@@ -25,19 +25,8 @@ object AssetExtractor {
         destDir.mkdirs()
 
         try {
-            // 1. rootfs එක extract කරනවා
-            Log.e(TAG, "Extracting rootfs.tzst...")
-            extractTzst(context, "rootfs.tzst", destDir)
-
-            // 2. rootfs_patches
-            Log.e(TAG, "Extracting rootfs_patches.tzst...")
-            extractTzst(context, "rootfs_patches.tzst", destDir)
-
-            // 3. අනිත් සාමාන්‍ය folders
-            val normalAssets = arrayOf("box64", "dxwrapper", "graphics_driver", "inputcontrols", "soundfont", "wallpapers", "wincomponents")
-            for (asset in normalAssets) {
-                copyAssetFolder(context, asset, File(destDir, asset))
-            }
+            Log.e(TAG, "Extracting rootfs...")
+            extractTzst(tzstFile, destDir)
 
             Log.e(TAG, "Extraction completed successfully!")
         } catch (e: Exception) {
@@ -46,17 +35,15 @@ object AssetExtractor {
         }
     }
 
-    private fun extractTzst(context: Context, assetName: String, destFile: File) {
+    private fun extractTzst(tzstFile: File, destFile: File) {
         try {
-            Thread.sleep(1000) // තත්පරයක් ඉන්නවා Toast එක පේන්න
-            context.assets.open(assetName).use { inputStream ->
+            tzstFile.inputStream().use { inputStream ->
                 BufferedInputStream(inputStream, 8192).use { bufferedInputStream ->
                     ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
                         TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
                             
                             var entry = tarInputStream.nextEntry
                             while (entry != null) {
-                                // ෆයිල් නම හරියටම ගන්නවා
                                 val outFile = File(destFile, entry.name)
                                 
                                 if (entry.isDirectory) {
@@ -77,38 +64,10 @@ object AssetExtractor {
                     }
                 }
             }
-            Log.e(TAG, "Successfully extracted $assetName")
+            Log.e(TAG, "Successfully extracted ${tzstFile.name}")
         } catch (e: Exception) {
-            Log.e(TAG, "Error extracting $assetName: ${e.message}", e)
+            Log.e(TAG, "Error extracting ${tzstFile.name}: ${e.message}", e)
             throw e 
-        }
-    }
-
-    private fun copyAssetFolder(context: Context, assetPath: String, destFolder: File) {
-        val files = context.assets.list(assetPath)
-        if (files.isNullOrEmpty()) {
-            copyAssetFile(context, assetPath, destFolder)
-        } else {
-            destFolder.mkdirs()
-            for (file in files) {
-                copyAssetFolder(context, "$assetPath/$file", File(destFolder, file))
-            }
-        }
-    }
-
-    private fun copyAssetFile(context: Context, assetPath: String, destFile: File) {
-        try {
-            context.assets.open(assetPath).use { inputStream ->
-                FileOutputStream(destFile).use { outputStream ->
-                    val buffer = ByteArray(4096)
-                    var length: Int
-                    while (inputStream.read(buffer).also { length = it } > 0) {
-                        outputStream.write(buffer, 0, length)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error copying file $assetPath", e)
         }
     }
 }
