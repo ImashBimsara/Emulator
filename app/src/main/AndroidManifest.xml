@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- WakeLock එකට විතරයි අවශ්‍යතාවය -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:allowBackup="true"
@@ -32,12 +30,7 @@
             </intent-filter>
         </activity>
 
-        <!-- මේක අනිවාර්යයෙන්ම .ExtractionService වෙන්න ඕනේ -->
-        <service 
-            android:name=".ExtractionService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false" />
-
+        <!-- ExtractionService එක අයින් කළා -->
     </application>
 
 </manifest>
