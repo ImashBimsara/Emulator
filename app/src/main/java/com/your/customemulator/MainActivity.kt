@@ -52,20 +52,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Asset Extractor එක background එකේ run කරන function එක
+        // Asset Extractor එක background එකේ run කරන function එක
     private fun setupNativeEnvironment() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // අපි කලින් හදපු AssetExtractor එක call කරනවා
+                // Assets extract කරනවා
                 AssetExtractor.extractAssets(this@MainActivity)
                 
+                // Extract වුණාට පස්සේ ෆෝන් එකේ storage එකේ තියෙන files ගාන බලනවා
+                val imagefsDir = File(filesDir, "imagefs")
+                val filesCount = imagefsDir.listFiles()?.size ?: 0
+                val isRootfsReady = File(imagefsDir, "rootfs").exists()
+                
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Emulator Core Files Ready!", Toast.LENGTH_SHORT).show()
+                    val statusMessage = "Ready! Found $filesCount items.\nRootfs ready: $isRootfsReady"
+                    Toast.makeText(this@MainActivity, statusMessage, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Error extracting files!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
