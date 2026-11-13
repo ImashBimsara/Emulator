@@ -39,42 +39,43 @@ class EmulatorActivity : AppCompatActivity() {
     }
 
     private fun launchGameDirectly(exePath: String) {
-    CoroutineScope(Dispatchers.IO).launch {
-        try {
-            val imagefsDir = File(filesDir, "imagefs").absolutePath
-            
-            // ✅ Wine තියෙන ඇත්ත තැන
-            val winePath = File(imagefsDir, "rootfs/opt/wine/bin/wine").absolutePath
-            
-            // ✅ Box64 තියෙන ඇත්ත තැන
-            val box64Path = File(imagefsDir, "rootfs/usr/bin/box64").absolutePath
-            
-            val winePrefix = File(filesDir, "wineprefix").absolutePath
-            val prootPath = File(imagefsDir, "rootfs/usr/bin/proot").absolutePath
-
-            Logger.log(this@EmulatorActivity, "Wine Path: $winePath")
-            Logger.log(this@EmulatorActivity, "Box64 Path: $box64Path")
-
-            val script = StringBuilder().apply {
-                append("export PROOT_NO_SECURE=1\n")
-                append("export WINEPREFIX=$winePrefix\n")
-                append("export WINEDEBUG=-all\n")
-                append("export WINEARCH=win64\n")
-                append("export DISPLAY=:0\n")
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val imagefsDir = File(filesDir, "imagefs").absolutePath
                 
-                // Proot එකෙන් run කරනවා
-                append("$prootPath -r $imagefsDir/rootfs $box64Path $winePath \"$exePath\"\n")
-            }
+                // ✅ Wine තියෙන ඇත්ත තැන
+                val winePath = File(imagefsDir, "rootfs/opt/wine/bin/wine").absolutePath
+                
+                // ✅ Box64 තියෙන ඇත්ත තැන
+                val box64Path = File(imagefsDir, "rootfs/usr/bin/box64").absolutePath
+                
+                val winePrefix = File(filesDir, "wineprefix").absolutePath
+                val prootPath = File(imagefsDir, "rootfs/usr/bin/proot").absolutePath
 
-            val process = ProcessBuilder("sh", "-c", script.toString())
-                .redirectErrorStream(true)
-                .start()
-            process.waitFor()
-        } catch (e: Exception) {
-            Logger.log(this@EmulatorActivity, "Error: ${e.message}")
+                Logger.log(this@EmulatorActivity, "Wine Path: $winePath")
+                Logger.log(this@EmulatorActivity, "Box64 Path: $box64Path")
+
+                val script = StringBuilder().apply {
+                    append("export PROOT_NO_SECURE=1\n")
+                    append("export WINEPREFIX=$winePrefix\n")
+                    append("export WINEDEBUG=-all\n")
+                    append("export WINEARCH=win64\n")
+                    append("export DISPLAY=:0\n")
+                    
+                    // Proot එකෙන් run කරනවා
+                    append("$prootPath -r $imagefsDir/rootfs $box64Path $winePath \"$exePath\"\n")
+                }
+
+                val process = ProcessBuilder("sh", "-c", script.toString())
+                    .redirectErrorStream(true)
+                    .start()
+                process.waitFor()
+            } catch (e: Exception) {
+                Logger.log(this@EmulatorActivity, "Error: ${e.message}")
+                runOnUiThread {
+                    Toast.makeText(this@EmulatorActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
-}
-    }
-    
 }
