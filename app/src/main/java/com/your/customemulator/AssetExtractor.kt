@@ -1,21 +1,24 @@
 package com.your.customemulator
 
 import android.content.Context
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream
 import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 
 object AssetExtractor {
     private const val TAG = "AssetExtractor"
+    private const val BUFFER_SIZE = 8192 // Winlator පාවිච්චි කරන size එකට සමානයි
 
     fun extractAssets(context: Context) {
         val destDir = File(context.filesDir, "imagefs")
         
-        Logger.log(context, "--- Extraction Process Started ---")
+        Logger.log(context, "--- Extraction Process Started (Winlator Style) ---")
 
-        // පරණ ෆෝල්ඩර් එක මකන්න
         if (destDir.exists()) {
             Logger.log(context, "Deleting old imagefs folder...")
             destDir.deleteRecursively()
@@ -23,12 +26,19 @@ object AssetExtractor {
         destDir.mkdirs()
 
         try {
+            // 1. rootfs.tzst එක extract කරනවා
             Logger.log(context, "Extracting rootfs.tzst...")
-            extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
-            Logger.log(context, "Finished rootfs.tzst extraction")
+            val rootfsFile = File(destDir, "rootfs")
+            extractTzstLikeWinlator(context, "rootfs.tzst", rootfsFile)
+            
+            // 2. rootfs_patches.tzst එක extract කරනවා
+            Logger.log(context, "Extracting rootfs_patches.tzst...")
+            val patchesFile = File(destDir, "rootfs_patches")
+            extractTzstLikeWinlator(context, "rootfs_patches.tzst", patchesFile)
 
+            Logger.log(context, "--- Extraction Completed Successfully ---")
         } catch (e: Exception) {
-            Logger.log(context, "CRITICAL ERROR in AssetExtractor: ${e.message}")
+            Logger.log(context, "CRITICAL ERROR: ${e.message}")
             e.stackTrace.forEach { element ->
                 Logger.log(context, "  at $element")
             }
@@ -36,60 +46,62 @@ object AssetExtractor {
         }
     }
 
-    private fun extractTzst(context: Context, assetName: String, destFile: File) {
-    try {
-        Logger.log(context, "Opening $assetName from assets...")
-        
-        context.assets.open(assetName).use { inputStream ->
-            Logger.log(context, "Creating BufferedInputStream...")
-            BufferedInputStream(inputStream, 16384).use { bufferedInputStream ->
-                
-                Logger.log(context, "Creating ZstdCompressorInputStream...")
-                // මෙතන අපි buffer size එකක් දෙනවා
-                ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
-                    
-                    Logger.log(context, "Creating TarArchiveInputStream...")
-                    TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
-                        
-                        var entry = tarInputStream.nextEntry
-                        var count = 0
-                        
-                        while (entry != null) {
-                            var entryName = entry.name
-                            if (entryName.startsWith("./")) {
-                                entryName = entryName.substring(2)
-                            }
+    // Winlator එකේ විදිහටම extract කරන function එක
+    private fun extractTzstLikeWinlator(context: Context, assetName: String, destination: File) {
+        try {
+            context.assets.open(assetName).use { inputStream ->
+                BufferedInputStream(inputStream, BUFFER_SIZE).use { bufferedInputStream ->
+                    ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
+                        TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
                             
-                            val outFile = File(destFile, entryName)
+                            var entry: TarArchiveEntry? = tarInputStream.nextEntry
+                            var count = 0
                             
-                            if (entry.isDirectory) {
-                                outFile.mkdirs()
-                            } else {
-                                outFile.parentFile?.mkdirs()
-                                FileOutputStream(outFile).use { out ->
-                                    val buffer = ByteArray(8192)
-                                    var len: Int
-                                    while (tarInputStream.read(buffer).also { len = it } > 0) {
-                                        out.write(buffer, 0, len)
+                            while (entry != null) {
+                                if (!tarInputStream.canReadEntryData(entry)) {
+                                    entry = tarInputStream.nextEntry
+                                    continue
+                                }
+
+                                val file = File(destination, entry.name)
+
+                                if (entry.isDirectory) {
+                                    if (!file.isDirectory) file.mkdirs()
+                                } else {
+                                    if (entry.isSymbolicLink) {
+                                        // Symlink එකක් නම් (Winlator කරන විදිහට)
+                                        Logger.log(context, "Symlink found: ${entry.name} -> ${entry.linkName}")
+                                        // Android වල root නැතුව symlink හදන්න බෑ, ඒ නිසා අපි ඒක skip කරනවා හෝ file copy කරනවා
+                                    } else {
+                                        // සාමාන්‍ය ෆයිල් එකක් නම්, Buffer එකක් පාවිච්චි කරලා ලියනවා
+                                        file.parentFile?.mkdirs()
+                                        BufferedOutputStream(FileOutputStream(file), BUFFER_SIZE).use { outStream ->
+                                            val buffer = ByteArray(BUFFER_SIZE)
+                                            var len: Int
+                                            while (tarInputStream.read(buffer).also { len = it } > 0) {
+                                                outStream.write(buffer, 0, len)
+                                            }
+                                        }
                                     }
                                 }
+                                
+                                // (Winlator කරන විදිහට chmod 0771 - Android වල මේකට root ඕන නිසා අපි skip කරනවා)
+                                
+                                count++
+                                if (count % 1000 == 0) {
+                                    Logger.log(context, "$assetName: Extracted $count entries...")
+                                }
+                                
+                                entry = tarInputStream.nextEntry
                             }
-                            count++
-                            
-                            if (count % 1000 == 0) {
-                                Logger.log(context, "Extracted $count entries so far...")
-                            }
-                            
-                            entry = tarInputStream.nextEntry
+                            Logger.log(context, "Successfully extracted $assetName. Total: $count entries")
                         }
-                        Logger.log(context, "Successfully extracted $assetName. Total entries: $count")
                     }
                 }
             }
+        } catch (e: Exception) {
+            Logger.log(context, "Error extracting $assetName: ${e.message}")
+            throw e
         }
-    } catch (e: Exception) {
-        Logger.log(context, "Error extracting $assetName: ${e.message}")
-        throw e 
     }
-}
 }
