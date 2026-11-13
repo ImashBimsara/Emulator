@@ -17,31 +17,47 @@ object AssetExtractor {
         val destDir = File(context.filesDir, "imagefs")
         
         Logger.log(context, "--- Extraction Process Started ---")
-
+    
         if (destDir.exists()) {
             Logger.log(context, "Deleting old imagefs folder...")
             destDir.deleteRecursively()
         }
         destDir.mkdirs()
-
+    
         try {
-            // 1. rootfs.tzst එක extract කරනවා
+            // 1. rootfs.tzst
             Logger.log(context, "Extracting rootfs.tzst...")
             extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
+    
+            // 2. rootfs_patches.tzst
+            Logger.log(context, "Extracting rootfs_patches.tzst...")
+            extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
+    
+            // 3. box64-0.4.4.tzst (මේක තමයි අලුතෙන් එකතු කළේ)
+            Logger.log(context, "Extracting box64-0.4.4.tzst...")
+            val box64TempDir = File(destDir, "box64_temp")
+            box64TempDir.mkdirs()
+            extractTzst(context, "box64/box64-0.4.4.tzst", box64TempDir)
             
-            // 2. rootfs_patches.tzst එක extract කරනවා (තියෙනවා නම්)
-            val assets = context.assets.list("") ?: arrayOf()
-            if (assets.contains("rootfs_patches.tzst")) {
-                Logger.log(context, "Extracting rootfs_patches.tzst...")
-                extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
+            // box64 executable එක usr/bin එකට copy කරන්න
+            val box64Source = File(box64TempDir, "box64")
+            val usrBinDir = File(destDir, "rootfs/usr/bin")
+            usrBinDir.mkdirs()
+            
+            if (box64Source.exists()) {
+                Logger.log(context, "Copying box64 to usr/bin...")
+                box64Source.copyTo(File(usrBinDir, "box64"), overwrite = true)
+                Logger.log(context, "Box64 copied successfully!")
+            } else {
+                Logger.log(context, "❌ box64 executable not found in tzst!")
             }
-
+            
+            // temp folder එක මකන්න
+            box64TempDir.deleteRecursively()
+    
             Logger.log(context, "--- Extraction Completed Successfully ---")
         } catch (e: Exception) {
             Logger.log(context, "CRITICAL ERROR: ${e.message}")
-            e.stackTrace.forEach { element ->
-                Logger.log(context, "  at $element")
-            }
             throw e 
         }
     }
@@ -60,11 +76,6 @@ object AssetExtractor {
                                 if (!tarInputStream.canReadEntryData(entry)) {
                                     entry = tarInputStream.nextEntry as? TarArchiveEntry
                                     continue
-                                }
-    
-                                // වැදගත් ෆයිල්ස් වල නම් Log කරන්න
-                                if (entry.name.contains("wine") || entry.name.contains("bin")) {
-                                    Logger.log(context, "Found: ${entry.name}")
                                 }
     
                                 val outFile = File(destFile, entry.name)
