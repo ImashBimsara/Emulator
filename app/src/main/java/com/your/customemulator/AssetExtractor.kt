@@ -40,16 +40,21 @@ object AssetExtractor {
             extractTzst(context, "box64/box64-0.4.4.tzst", box64TempDir)
             
             // box64 executable එක usr/bin එකට copy කරන්න
-            val box64Source = File(box64TempDir, "box64")
+            // මෙතනදී අපි box64 තියෙන ඇත්ත තැන (usr/local/bin/box64) ගන්නවා
+            val box64Source = File(box64TempDir, "usr/local/bin/box64")
             val usrBinDir = File(destDir, "rootfs/usr/bin")
             usrBinDir.mkdirs()
             
             if (box64Source.exists()) {
-                Logger.log(context, "Copying box64 to usr/bin...")
+                Logger.log(context, "✅ Copying box64 from ${box64Source.absolutePath} to usr/bin...")
                 box64Source.copyTo(File(usrBinDir, "box64"), overwrite = true)
-                Logger.log(context, "Box64 copied successfully!")
+                Logger.log(context, "✅ Box64 copied successfully!")
             } else {
-                Logger.log(context, "❌ box64 executable not found in tzst!")
+                Logger.log(context, "❌ box64 executable not found at: ${box64Source.absolutePath}")
+                // මොකක් හරි හේතුවකට ඒ path එකේ නැත්නම්, temp folder එකේ තියෙන ෆයිල්ස් ටික log කරන්න
+                box64TempDir.walk().forEach { file ->
+                    Logger.log(context, "  Found in temp: ${file.relativeTo(box64TempDir)}")
+                }
             }
             
             // temp folder එක මකන්න
