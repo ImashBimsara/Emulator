@@ -39,50 +39,36 @@ class EmulatorActivity : AppCompatActivity() {
     }
 
     private fun launchGameDirectly(exePath: String) {
-        // මේක UI Thread එකේ කරනකොට App එක hang වෙන නිසා Background එකේ run කරමු
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. අපි Extract කරපු Native files (rootfs) තියෙන තැන හොයාගන්නවා
                 val imagefsDir = File(filesDir, "imagefs").absolutePath
-                val rootfsDir = File(imagefsDir, "rootfs").absolutePath
                 
-                // 2. Wine සහ Box64 තියෙන තැන (rootfs එක ඇතුළේ usr/bin එකේ)
-                val box64Path = File(rootfsDir, "usr/bin/box64").absolutePath
-                val winePath = File(rootfsDir, "usr/bin/wine64").absolutePath
+                // Wine තියෙන ඇත්ත තැන
+                val winePath = File(imagefsDir, "rootfs/opt/wine/bin/wine").absolutePath
                 
-                // 3. Wine Prefix එක (මේක මුලින්ම හැදෙන්න ඕනේ)
+                // Box64 එක තියෙන තැන
+                val box64Path = File(imagefsDir, "rootfs/usr/bin/box64").absolutePath
+                
                 val winePrefix = File(filesDir, "wineprefix").absolutePath
-
-                // අපිට මේක run කරන්න proot එකක් ඕනේ (Winlator පාවිච්චි කරන විදිහට)
-                val prootPath = File(rootfsDir, "usr/bin/proot").absolutePath 
-
-                // 4. Run කරන්න ඕන Shell Script එක හදනවා
+                val prootPath = File(imagefsDir, "rootfs/usr/bin/proot").absolutePath
+    
                 val script = StringBuilder().apply {
-                    // proot එකෙන් rootfs එකට යනවා, ඊට පස්සේ box64 හරහා wine run කරනවා
                     append("export PROOT_NO_SECURE=1\n")
                     append("export WINEPREFIX=$winePrefix\n")
                     append("export WINEDEBUG=-all\n")
                     append("export WINEARCH=win64\n")
-                    append("export DISPLAY=:0\n") // Graphics සඳහා (පසුව හදමු)
-                    
-                    // ඇත්තම run command එක
-                    // $prootPath -r $rootfsDir $box64Path $winePath "$exePath"
-                    append("$prootPath -r $rootfsDir $box64Path $winePath \"$exePath\"\n")
+                    append("export DISPLAY=:0\n")
+                    append("$prootPath -r $imagefsDir/rootfs $box64Path $winePath \"$exePath\"\n")
                 }
-
+    
                 val process = ProcessBuilder("sh", "-c", script.toString())
                     .redirectErrorStream(true)
                     .start()
-                
-                // (මෙතනදී අපිට process එකේ output එක කියවන්න පුළුවන්, ඒත් දැනට ඒක අවශ්‍ය නෑ)
                 process.waitFor()
-
             } catch (e: Exception) {
                 e.printStackTrace()
-                runOnUiThread {
-                    Toast.makeText(this@EmulatorActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
             }
         }
     }
+    
 }
