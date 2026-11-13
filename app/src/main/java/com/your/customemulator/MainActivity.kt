@@ -86,70 +86,26 @@ class MainActivity : AppCompatActivity() {
                     imagefsDir.deleteRecursively()
                 }
 
+                // Extraction එක run කරන්න
                 AssetExtractor.extractAssets(this@MainActivity)
                 
-                // ========== වැදගත් කොටස: Wine හොයන්න ==========
+                // ========== Wine හොයන කොටස ==========
                 Logger.log(this@MainActivity, "Checking for Wine...")
                 
                 val rootfsDir = File(imagefsDir, "rootfs")
                 
-                // 1. rootfs ෆෝල්ඩර් එක තියෙනවද?
-                Logger.log(this@MainActivity, "Rootfs folder exists: ${rootfsDir.exists()}")
+                // 1. Wine තියෙන ඇත්ත තැන (opt/wine/bin/wine) check කරන්න
+                val wineFile = File(rootfsDir, "opt/wine/bin/wine")
+                val box64File = File(rootfsDir, "usr/bin/box64")
                 
-                if (rootfsDir.exists()) {
-                    val rootfsContents = rootfsDir.listFiles()
-                    Logger.log(this@MainActivity, "Rootfs contains ${rootfsContents?.size ?: 0} items")
-                    
-                    // rootfs එකේ මූලික ෆෝල්ඩර්ස් ටික log කරන්න
-                    rootfsContents?.take(20)?.forEach { 
-                        Logger.log(this@MainActivity, "  - ${it.name}")
-                    }
-                    
-                    // 2. Wine තියෙන තැන හොයන්න
-                    val possiblePaths = listOf(
-                        "rootfs/usr/bin/wine64",
-                        "rootfs/usr/bin/wine",
-                        "rootfs/opt/wine/bin/wine64",
-                        "rootfs/bin/wine64"
-                    )
-                    
-                    var wineFound = false
-                    for (path in possiblePaths) {
-                        val file = File(imagefsDir, path)
-                        if (file.exists()) {
-                            Logger.log(this@MainActivity, "✅ Wine FOUND at: $path")
-                            wineFound = true
-                            break
-                        }
-                    }
-                    
-                    if (!wineFound) {
-                        Logger.log(this@MainActivity, "❌ Wine NOT found in any of the expected paths")
-                        
-                        // usr/bin folder එක තියෙනවද බලන්න
-                        val usrBinDir = File(rootfsDir, "usr/bin")
-                        if (usrBinDir.exists()) {
-                            val binFiles = usrBinDir.listFiles()
-                            Logger.log(this@MainActivity, "usr/bin contains ${binFiles?.size ?: 0} files")
-                            binFiles?.filter { it.name.contains("wine") }?.forEach {
-                                Logger.log(this@MainActivity, "  Found wine-related file: ${it.name}")
-                            }
-                        } else {
-                            Logger.log(this@MainActivity, "usr/bin folder does NOT exist")
-                        }
-                    }
-                    
-                    withContext(Dispatchers.Main) {
-                        if (wineFound) {
-                            Toast.makeText(this@MainActivity, "SUCCESS! Wine is ready.", Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(this@MainActivity, "Extraction done but Wine not found. Check log.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                } else {
-                    Logger.log(this@MainActivity, "❌ Rootfs folder does NOT exist!")
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Rootfs folder not found!", Toast.LENGTH_LONG).show()
+                Logger.log(this@MainActivity, "Wine file exists: ${wineFile.exists()}")
+                Logger.log(this@MainActivity, "Box64 file exists: ${box64File.exists()}")
+                
+                withContext(Dispatchers.Main) {
+                    if (wineFile.exists()) {
+                        Toast.makeText(this@MainActivity, "SUCCESS! Wine is ready.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Extraction done but Wine not found.", Toast.LENGTH_LONG).show()
                     }
                 }
 
@@ -193,8 +149,25 @@ class MainActivity : AppCompatActivity() {
             
             // Wine Prefix එක
             val winePrefix = File(filesDir, "wineprefix").absolutePath
-    
-            // ... (ඉතුරු ටික එහෙමම තියන්න)
+
+            val installScript = StringBuilder().apply {
+                append("export PROOT_NO_SECURE=1\n")
+                append("export WINEPREFIX=$winePrefix\n")
+                append("export WINEDEBUG=-all\n")
+                append("$box64Path $winePath \"$installerPath\" /verysilent /suppressmsgboxes /norestart\n")
+            }
+
+            try {
+                val process = ProcessBuilder("sh", "-c", installScript.toString())
+                    .redirectErrorStream(true)
+                    .start()
+                process.waitFor()
+                runOnUiThread {
+                    Toast.makeText(this, "Game Installed Successfully!", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }.start()
     }
 }
