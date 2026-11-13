@@ -80,16 +80,76 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, "Extracting... Please wait.", Toast.LENGTH_LONG).show()
                 }
 
+                // Extract කරන්න කලින් පරණ ෆයිල්ස් තියෙනවා නම් මකන්න
+                if (imagefsDir.exists()) {
+                    Logger.log(this@MainActivity, "Deleting old imagefs folder...")
+                    imagefsDir.deleteRecursively()
+                }
+
                 AssetExtractor.extractAssets(this@MainActivity)
                 
-                val isWineReady = File(imagefsDir, "rootfs/usr/bin/wine64").exists()
-                Logger.log(this@MainActivity, "Extraction done. Wine ready: $isWineReady")
+                // ========== වැදගත් කොටස: Wine හොයන්න ==========
+                Logger.log(this@MainActivity, "Checking for Wine...")
                 
-                withContext(Dispatchers.Main) {
-                    if (isWineReady) {
-                        Toast.makeText(this@MainActivity, "SUCCESS! Wine is ready.", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Extraction finished but Wine not found.", Toast.LENGTH_LONG).show()
+                val rootfsDir = File(imagefsDir, "rootfs")
+                
+                // 1. rootfs ෆෝල්ඩර් එක තියෙනවද?
+                Logger.log(this@MainActivity, "Rootfs folder exists: ${rootfsDir.exists()}")
+                
+                if (rootfsDir.exists()) {
+                    val rootfsContents = rootfsDir.listFiles()
+                    Logger.log(this@MainActivity, "Rootfs contains ${rootfsContents?.size ?: 0} items")
+                    
+                    // rootfs එකේ මූලික ෆෝල්ඩර්ස් ටික log කරන්න
+                    rootfsContents?.take(20)?.forEach { 
+                        Logger.log(this@MainActivity, "  - ${it.name}")
+                    }
+                    
+                    // 2. Wine තියෙන තැන හොයන්න
+                    val possiblePaths = listOf(
+                        "rootfs/usr/bin/wine64",
+                        "rootfs/usr/bin/wine",
+                        "rootfs/opt/wine/bin/wine64",
+                        "rootfs/bin/wine64"
+                    )
+                    
+                    var wineFound = false
+                    for (path in possiblePaths) {
+                        val file = File(imagefsDir, path)
+                        if (file.exists()) {
+                            Logger.log(this@MainActivity, "✅ Wine FOUND at: $path")
+                            wineFound = true
+                            break
+                        }
+                    }
+                    
+                    if (!wineFound) {
+                        Logger.log(this@MainActivity, "❌ Wine NOT found in any of the expected paths")
+                        
+                        // usr/bin folder එක තියෙනවද බලන්න
+                        val usrBinDir = File(rootfsDir, "usr/bin")
+                        if (usrBinDir.exists()) {
+                            val binFiles = usrBinDir.listFiles()
+                            Logger.log(this@MainActivity, "usr/bin contains ${binFiles?.size ?: 0} files")
+                            binFiles?.filter { it.name.contains("wine") }?.forEach {
+                                Logger.log(this@MainActivity, "  Found wine-related file: ${it.name}")
+                            }
+                        } else {
+                            Logger.log(this@MainActivity, "usr/bin folder does NOT exist")
+                        }
+                    }
+                    
+                    withContext(Dispatchers.Main) {
+                        if (wineFound) {
+                            Toast.makeText(this@MainActivity, "SUCCESS! Wine is ready.", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(this@MainActivity, "Extraction done but Wine not found. Check log.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                } else {
+                    Logger.log(this@MainActivity, "❌ Rootfs folder does NOT exist!")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Rootfs folder not found!", Toast.LENGTH_LONG).show()
                     }
                 }
 
