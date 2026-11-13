@@ -184,28 +184,17 @@ class MainActivity : AppCompatActivity() {
     private fun installGameAutomatically(installerPath: String) {
         Thread {
             val imagefsDir = File(filesDir, "imagefs").absolutePath
-            val winePrefix = File(filesDir, "wineprefix").absolutePath
+            
+            // Wine තියෙන ඇත්ත තැන
+            val winePath = File(imagefsDir, "rootfs/opt/wine/bin/wine").absolutePath
+            
+            // Box64 එක තියෙන තැන
             val box64Path = File(imagefsDir, "rootfs/usr/bin/box64").absolutePath
-            val winePath = File(imagefsDir, "rootfs/usr/bin/wine64").absolutePath
-
-            val installScript = StringBuilder().apply {
-                append("export PROOT_NO_SECURE=1\n")
-                append("export WINEPREFIX=$winePrefix\n")
-                append("export WINEDEBUG=-all\n")
-                append("$box64Path $winePath \"$installerPath\" /verysilent /suppressmsgboxes /norestart\n")
-            }
-
-            try {
-                val process = ProcessBuilder("sh", "-c", installScript.toString())
-                    .redirectErrorStream(true)
-                    .start()
-                process.waitFor()
-                runOnUiThread {
-                    Toast.makeText(this, "Game Installed Successfully!", Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            
+            // Wine Prefix එක
+            val winePrefix = File(filesDir, "wineprefix").absolutePath
+    
+            // ... (ඉතුරු ටික එහෙමම තියන්න)
         }.start()
     }
 }
