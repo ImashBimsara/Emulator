@@ -8,16 +8,15 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 
 object AssetExtractor {
     private const val TAG = "AssetExtractor"
-    private const val BUFFER_SIZE = 8192 // Winlator පාවිච්චි කරන size එකට සමානයි
+    private const val BUFFER_SIZE = 8192
 
     fun extractAssets(context: Context) {
         val destDir = File(context.filesDir, "imagefs")
         
-        Logger.log(context, "--- Extraction Process Started (Winlator Style) ---")
+        Logger.log(context, "--- Extraction Process Started ---")
 
         if (destDir.exists()) {
             Logger.log(context, "Deleting old imagefs folder...")
@@ -28,13 +27,14 @@ object AssetExtractor {
         try {
             // 1. rootfs.tzst එක extract කරනවා
             Logger.log(context, "Extracting rootfs.tzst...")
-            val rootfsFile = File(destDir, "rootfs")
-            extractTzstLikeWinlator(context, "rootfs.tzst", rootfsFile)
+            extractTzst(context, "rootfs.tzst", File(destDir, "rootfs"))
             
-            // 2. rootfs_patches.tzst එක extract කරනවා
-            Logger.log(context, "Extracting rootfs_patches.tzst...")
-            val patchesFile = File(destDir, "rootfs_patches")
-            extractTzstLikeWinlator(context, "rootfs_patches.tzst", patchesFile)
+            // 2. rootfs_patches.tzst එක extract කරනවා (තියෙනවා නම්)
+            val assets = context.assets.list("") ?: arrayOf()
+            if (assets.contains("rootfs_patches.tzst")) {
+                Logger.log(context, "Extracting rootfs_patches.tzst...")
+                extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
+            }
 
             Logger.log(context, "--- Extraction Completed Successfully ---")
         } catch (e: Exception) {
@@ -46,8 +46,7 @@ object AssetExtractor {
         }
     }
 
-    // Winlator එකේ විදිහටම extract කරන function එක
-    private fun extractTzstLikeWinlator(context: Context, assetName: String, destination: File) {
+    private fun extractTzst(context: Context, assetName: String, destFile: File) {
         try {
             context.assets.open(assetName).use { inputStream ->
                 BufferedInputStream(inputStream, BUFFER_SIZE).use { bufferedInputStream ->
@@ -63,29 +62,20 @@ object AssetExtractor {
                                     continue
                                 }
 
-                                val file = File(destination, entry.name)
+                                val outFile = File(destFile, entry.name)
 
                                 if (entry.isDirectory) {
-                                    if (!file.isDirectory) file.mkdirs()
+                                    outFile.mkdirs()
                                 } else {
-                                    if (entry.isSymbolicLink) {
-                                        // Symlink එකක් නම් (Winlator කරන විදිහට)
-                                        Logger.log(context, "Symlink found: ${entry.name} -> ${entry.linkName}")
-                                        // Android වල root නැතුව symlink හදන්න බෑ, ඒ නිසා අපි ඒක skip කරනවා හෝ file copy කරනවා
-                                    } else {
-                                        // සාමාන්‍ය ෆයිල් එකක් නම්, Buffer එකක් පාවිච්චි කරලා ලියනවා
-                                        file.parentFile?.mkdirs()
-                                        BufferedOutputStream(FileOutputStream(file), BUFFER_SIZE).use { outStream ->
-                                            val buffer = ByteArray(BUFFER_SIZE)
-                                            var len: Int
-                                            while (tarInputStream.read(buffer).also { len = it } > 0) {
-                                                outStream.write(buffer, 0, len)
-                                            }
+                                    outFile.parentFile?.mkdirs()
+                                    BufferedOutputStream(FileOutputStream(outFile), BUFFER_SIZE).use { out ->
+                                        val buffer = ByteArray(BUFFER_SIZE)
+                                        var len: Int
+                                        while (tarInputStream.read(buffer).also { len = it } > 0) {
+                                            out.write(buffer, 0, len)
                                         }
                                     }
                                 }
-                                
-                                // (Winlator කරන විදිහට chmod 0771 - Android වල මේකට root ඕන නිසා අපි skip කරනවා)
                                 
                                 count++
                                 if (count % 1000 == 0) {
@@ -101,7 +91,7 @@ object AssetExtractor {
             }
         } catch (e: Exception) {
             Logger.log(context, "Error extracting $assetName: ${e.message}")
-            throw e
+            throw e 
         }
     }
 }
