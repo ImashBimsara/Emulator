@@ -53,7 +53,6 @@ object AssetExtractor {
                     ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
                         TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
                             
-                            // මෙතන තමයි වෙනස් වුණේ - TarArchiveEntry එකක් විදිහට cast කරනවා
                             var entry = tarInputStream.nextEntry as? TarArchiveEntry
                             var count = 0
                             
@@ -61,6 +60,11 @@ object AssetExtractor {
                                 if (!tarInputStream.canReadEntryData(entry)) {
                                     entry = tarInputStream.nextEntry as? TarArchiveEntry
                                     continue
+                                }
+    
+                                // වැදගත් ෆයිල්ස් වල නම් Log කරන්න
+                                if (entry.name.contains("wine") || entry.name.contains("bin")) {
+                                    Logger.log(context, "Found: ${entry.name}")
                                 }
     
                                 val outFile = File(destFile, entry.name)
@@ -79,10 +83,6 @@ object AssetExtractor {
                                 }
                                 
                                 count++
-                                if (count % 1000 == 0) {
-                                    Logger.log(context, "$assetName: Extracted $count entries...")
-                                }
-                                
                                 entry = tarInputStream.nextEntry as? TarArchiveEntry
                             }
                             Logger.log(context, "Successfully extracted $assetName. Total: $count entries")
