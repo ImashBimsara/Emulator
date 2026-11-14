@@ -56,6 +56,13 @@ object AssetExtractor {
             
             box64TempDir.deleteRecursively()
     
+            // ✅ home/xuser ෆෝල්ඩර් එක හදන්න (Wine එකට ඕනේ)
+            val xuserDir = File(destDir, "rootfs/home/xuser")
+            if (!xuserDir.exists()) {
+                xuserDir.mkdirs()
+                Logger.log(context, "✅ Created home/xuser directory")
+            }
+    
             // ✅ proot එක copy කරලා execute permission එක දෙන්න
             Logger.log(context, "Copying proot to usr/bin...")
             val prootSource = File(destDir, "rootfs/usr/bin/proot")
@@ -68,6 +75,20 @@ object AssetExtractor {
                     }
                     // Execute permission එක දෙන්න (chmod 755)
                     prootSource.setExecutable(true)
+                    // ✅ proot එකට execute permission එක chmod එකෙන් දෙන්න
+                    try {
+                        val chmodProcess = ProcessBuilder("chmod", "755", prootSource.absolutePath)
+                            .redirectErrorStream(true)
+                            .start()
+                        val exitCode = chmodProcess.waitFor()
+                        if (exitCode == 0) {
+                            Logger.log(context, "✅ Proot chmod 755 successful")
+                        } else {
+                            Logger.log(context, "❌ Proot chmod failed with code: $exitCode")
+                        }
+                    } catch (e: Exception) {
+                        Logger.log(context, "❌ Error running chmod for proot: ${e.message}")
+                    }
                     Logger.log(context, "✅ Proot copied and made executable")
                 } catch (e: Exception) {
                     Logger.log(context, "❌ Error copying proot: ${e.message}")
@@ -78,6 +99,20 @@ object AssetExtractor {
             val box64File = File(usrBinDir, "box64")
             if (box64File.exists()) {
                 box64File.setExecutable(true)
+                // ✅ box64 එකට execute permission එක chmod එකෙන් දෙන්න
+                try {
+                    val chmodProcess = ProcessBuilder("chmod", "755", box64File.absolutePath)
+                        .redirectErrorStream(true)
+                        .start()
+                    val exitCode = chmodProcess.waitFor()
+                    if (exitCode == 0) {
+                        Logger.log(context, "✅ Box64 chmod 755 successful")
+                    } else {
+                        Logger.log(context, "❌ Box64 chmod failed with code: $exitCode")
+                    }
+                } catch (e: Exception) {
+                    Logger.log(context, "❌ Error running chmod for box64: ${e.message}")
+                }
                 Logger.log(context, "✅ Box64 executable permission set")
             }
             
