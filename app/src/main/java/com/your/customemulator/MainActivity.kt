@@ -39,7 +39,8 @@ class MainActivity : AppCompatActivity() {
         winePrefix: String,
         box64: String,
         wine: String,
-        installer: String
+        installer: String,
+        logFilePath: String
     ): Int
 
     override fun onCreate(savedInstanceState: Bundle?) {
