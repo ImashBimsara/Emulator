@@ -21,6 +21,13 @@ android {
         noCompress "tzst"
     }
 
+    // ✅ jniLibs ෆෝල්ඩර් එකේ තියෙන .so ෆයිල්ස් APK එකට එකතු කරන්න
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
     // 1. අලුතින් එකතු කරපු Signing Configs
     signingConfigs {
         release {
