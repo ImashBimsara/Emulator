@@ -63,43 +63,10 @@ object AssetExtractor {
                 Logger.log(context, "✅ Created home/xuser directory")
             }
     
-            // ✅ proot එක copy කරලා execute permission එක දෙන්න
-            Logger.log(context, "Copying proot to usr/bin...")
-            val prootSource = File(destDir, "rootfs/usr/bin/proot")
-            if (!prootSource.exists()) {
-                try {
-                    context.assets.open("proot").use { input ->
-                        FileOutputStream(prootSource).use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-                    // Execute permission එක දෙන්න (chmod 755)
-                    prootSource.setExecutable(true)
-                    // ✅ proot එකට execute permission එක chmod එකෙන් දෙන්න
-                    try {
-                        val chmodProcess = ProcessBuilder("chmod", "755", prootSource.absolutePath)
-                            .redirectErrorStream(true)
-                            .start()
-                        val exitCode = chmodProcess.waitFor()
-                        if (exitCode == 0) {
-                            Logger.log(context, "✅ Proot chmod 755 successful")
-                        } else {
-                            Logger.log(context, "❌ Proot chmod failed with code: $exitCode")
-                        }
-                    } catch (e: Exception) {
-                        Logger.log(context, "❌ Error running chmod for proot: ${e.message}")
-                    }
-                    Logger.log(context, "✅ Proot copied and made executable")
-                } catch (e: Exception) {
-                    Logger.log(context, "❌ Error copying proot: ${e.message}")
-                }
-            }
-            
             // ✅ Box64 එකට execute permission එක දෙන්න
             val box64File = File(usrBinDir, "box64")
             if (box64File.exists()) {
                 box64File.setExecutable(true)
-                // ✅ box64 එකට execute permission එක chmod එකෙන් දෙන්න
                 try {
                     val chmodProcess = ProcessBuilder("chmod", "755", box64File.absolutePath)
                         .redirectErrorStream(true)
