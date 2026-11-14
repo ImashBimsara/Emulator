@@ -207,7 +207,6 @@ class MainActivity : AppCompatActivity() {
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibPath = File(nativeLibDir, "libproot.so").absolutePath
                 
-                // installer එක rootfs එක ඇතුළට copy කරන්න
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
                 
@@ -216,13 +215,12 @@ class MainActivity : AppCompatActivity() {
                 val installerInternalPath = "/home/xuser/installer.exe"
                 val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
                 
-                // ✅ Wine output එක ලියන්න ඕන file එකේ path එක
                 val logFilePath = File(filesDir, "wine_output.log").absolutePath
     
                 Logger.log(this, "=== Starting Wine Installation via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
     
-                // ✅ JNI function එකට logFilePath එකත් යවන්න
+                // ✅ nativeLibDir එකත් යවන්න
                 val result = runProotJNI(
                     prootLibPath, 
                     rootfsDir, 
@@ -230,12 +228,12 @@ class MainActivity : AppCompatActivity() {
                     box64InternalPath, 
                     wineInternalPath, 
                     installerInternalPath,
-                    logFilePath
+                    logFilePath,
+                    nativeLibDir
                 )
                 
                 Logger.log(this, "JNI returned: $result")
                 
-                // ✅ ඊට පස්සේ අර log file එකේ තියෙන දේවල් අපේ emulator_log.txt එකට ලියන්න
                 val wineOutputFile = File(logFilePath)
                 if (wineOutputFile.exists()) {
                     Logger.log(this, "=== Wine Output ===")
