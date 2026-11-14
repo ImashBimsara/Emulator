@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     external fun runProotJNI(
         prootLibPath: String,
         rootfs: String,
+        winePrefix: String,
         box64: String,
         wine: String,
         installer: String
@@ -200,24 +201,37 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val imagefsDir = File(filesDir, "imagefs").absolutePath
-                val rootfsDir = File(imagefsDir, "rootfs").absolutePath // ✅ String එකක් කළා
+                val rootfsDir = File(imagefsDir, "rootfs").absolutePath
                 
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibPath = File(nativeLibDir, "libproot.so").absolutePath
                 
+                // installer එක rootfs එක ඇතුළට copy කරන්න
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
                 
-                val winePath = File(rootfsDir, "opt/wine/bin/wine").absolutePath
-                val box64Path = File(rootfsDir, "usr/bin/box64").absolutePath
-                val wineInstallerPath = "/home/xuser/installer.exe"
-
+                // ✅ හරි Paths (proot එක ඇතුළේ තියෙන විදිහට)
+                val box64InternalPath = "/usr/bin/box64"
+                val wineInternalPath = "/opt/wine/bin/wine"
+                val installerInternalPath = "/home/xuser/installer.exe"
+                val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
+    
                 Logger.log(this, "=== Starting Wine Installation via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
-                Logger.log(this, "Installer: $wineInstallerPath")
-
-                // ✅ JNI function එක call කරන්න (දැන් rootfsDir කියන්නේ String එකක්)
-                val result = runProotJNI(prootLibPath, rootfsDir, box64Path, winePath, wineInstallerPath)
+                Logger.log(this, "Rootfs (host): $rootfsDir")
+                Logger.log(this, "Box64 (internal): $box64InternalPath")
+                Logger.log(this, "Wine (internal): $wineInternalPath")
+                Logger.log(this, "Installer (internal): $installerInternalPath")
+    
+                // ✅ JNI function එකට හරි Paths ටික යවන්න
+                val result = runProotJNI(
+                    prootLibPath, 
+                    rootfsDir, 
+                    winePrefixHostPath, 
+                    box64InternalPath, 
+                    wineInternalPath, 
+                    installerInternalPath
+                )
                 
                 Logger.log(this, "JNI returned: $result")
                 
