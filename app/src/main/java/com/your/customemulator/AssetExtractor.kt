@@ -33,14 +33,12 @@ object AssetExtractor {
             Logger.log(context, "Extracting rootfs_patches.tzst...")
             extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
     
-            // 3. box64-0.4.4.tzst (මේක තමයි අලුතෙන් එකතු කළේ)
+            // 3. box64-0.4.4.tzst
             Logger.log(context, "Extracting box64-0.4.4.tzst...")
             val box64TempDir = File(destDir, "box64_temp")
             box64TempDir.mkdirs()
             extractTzst(context, "box64/box64-0.4.4.tzst", box64TempDir)
             
-            // box64 executable එක usr/bin එකට copy කරන්න
-            // මෙතනදී අපි box64 තියෙන ඇත්ත තැන (usr/local/bin/box64) ගන්නවා
             val box64Source = File(box64TempDir, "usr/local/bin/box64")
             val usrBinDir = File(destDir, "rootfs/usr/bin")
             usrBinDir.mkdirs()
@@ -51,14 +49,30 @@ object AssetExtractor {
                 Logger.log(context, "✅ Box64 copied successfully!")
             } else {
                 Logger.log(context, "❌ box64 executable not found at: ${box64Source.absolutePath}")
-                // මොකක් හරි හේතුවකට ඒ path එකේ නැත්නම්, temp folder එකේ තියෙන ෆයිල්ස් ටික log කරන්න
                 box64TempDir.walk().forEach { file ->
                     Logger.log(context, "  Found in temp: ${file.relativeTo(box64TempDir)}")
                 }
             }
             
-            // temp folder එක මකන්න
             box64TempDir.deleteRecursively()
+    
+            // ✅ proot එක copy කරලා execute permission එක දෙන්න (මේක දැන් try එක ඇතුළේ)
+            Logger.log(context, "Copying proot to usr/bin...")
+            val prootSource = File(destDir, "rootfs/usr/bin/proot")
+            if (!prootSource.exists()) {
+                try {
+                    context.assets.open("proot").use { input ->
+                        FileOutputStream(prootSource).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    // Execute permission එක දෙන්න (chmod 755)
+                    prootSource.setExecutable(true)
+                    Logger.log(context, "✅ Proot copied and made executable")
+                } catch (e: Exception) {
+                    Logger.log(context, "❌ Error copying proot: ${e.message}")
+                }
+            }
     
             Logger.log(context, "--- Extraction Completed Successfully ---")
         } catch (e: Exception) {
