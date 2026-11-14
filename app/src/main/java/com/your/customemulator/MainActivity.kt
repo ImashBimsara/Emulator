@@ -23,6 +23,27 @@ import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
+    // ✅ JNI library එක load කරන්න
+    companion object {
+        init {
+            try {
+                System.loadLibrary("prootjni")
+                Logger.log(null, "✅ libprootjni.so loaded successfully")
+            } catch (e: UnsatisfiedLinkError) {
+                Logger.log(null, "❌ Failed to load libprootjni.so: ${e.message}")
+            }
+        }
+    }
+
+    // ✅ Native function එක declare කරන්න
+    external fun runProotJNI(
+        prootLibPath: String,
+        rootfs: String,
+        box64: String,
+        wine: String,
+        installer: String
+    ): Int
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -135,7 +156,6 @@ class MainActivity : AppCompatActivity() {
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
                 val box64File = File(rootfsDir, "usr/bin/box64")
                 
-                // ✅ proot එක nativeLibraryDir එකේ තියෙනවද බලන්න
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibFile = File(nativeLibDir, "libproot.so")
                 
@@ -188,7 +208,7 @@ class MainActivity : AppCompatActivity() {
                 
                 // ✅ proot එක nativeLibraryDir එකෙන් ගන්න
                 val nativeLibDir = applicationInfo.nativeLibraryDir
-                val prootPath = File(nativeLibDir, "libproot.so").absolutePath
+                val prootLibPath = File(nativeLibDir, "libproot.so").absolutePath
                 
                 // installer එක rootfs එක ඇතුළට copy කරන්න
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
@@ -196,37 +216,19 @@ class MainActivity : AppCompatActivity() {
                 
                 val winePath = File(rootfsDir, "opt/wine/bin/wine").absolutePath
                 val box64Path = File(rootfsDir, "usr/bin/box64").absolutePath
-                val winePrefix = File(filesDir, "wineprefix").absolutePath
-
                 val wineInstallerPath = "/home/xuser/installer.exe"
 
-                val installScript = StringBuilder().apply {
-                    append("export PROOT_NO_SECURE=1\n")
-                    append("export WINEPREFIX=$winePrefix\n")
-                    append("export WINEDEBUG=-all\n")
-                    append("export WINEARCH=win64\n")
-                    append("export DISPLAY=:0\n")
-                    append("$prootPath -r $rootfsDir $box64Path $winePath \"$wineInstallerPath\"\n")
-                }
-
-                Logger.log(this, "=== Starting Wine Installation ===")
+                Logger.log(this, "=== Starting Wine Installation via JNI ===")
+                Logger.log(this, "Proot Lib: $prootLibPath")
                 Logger.log(this, "Installer: $wineInstallerPath")
-                Logger.log(this, "Proot: $prootPath")
 
-                val process = ProcessBuilder("sh", "-c", installScript.toString())
-                    .redirectErrorStream(true)
-                    .start()
-                    
-                val reader = process.inputStream.bufferedReader()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    Logger.log(this, "WINE_INSTALL: $line")
-                }
-                val exitCode = process.waitFor()
-                Logger.log(this, "Wine installation finished with code: $exitCode")
+                // ✅ JNI function එක call කරන්න
+                val result = runProotJNI(prootLibPath, rootfsDir, box64Path, winePath, wineInstallerPath)
+                
+                Logger.log(this, "JNI returned: $result")
                 
                 runOnUiThread {
-                    Toast.makeText(this, "Installation finished. Check log.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "JNI installation finished. Check log.", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 Logger.log(this, "Install Error: ${e.message}")
