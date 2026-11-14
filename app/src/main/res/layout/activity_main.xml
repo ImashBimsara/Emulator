@@ -14,13 +14,13 @@
         android:inputType="text"
         android:layout_marginBottom="16dp"/>
 
-    <EditText
-        android:id="@+id/etExePath"
+    <TextView
+        android:id="@+id/tvSelectedInstaller"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Enter .exe or Installer Path"
-        android:inputType="text"
-        android:layout_marginBottom="24dp"/>
+        android:text="No installer selected"
+        android:textColor="#FFFFFF"
+        android:padding="8dp" />
 
     <Button
         android:id="@+id/btnSelectGame"
