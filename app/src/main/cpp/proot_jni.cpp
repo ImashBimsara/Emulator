@@ -23,7 +23,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         jstring jWine,
         jstring jInstaller,
         jstring jLogFilePath,
-        jstring jNativeLibDir) {
+        jstring jNativeLibDir,
+        jstring jFilesDir) { // ✅ අලුතෙන් filesDir එක එකතු කළා
 
     const char* prootLibPath = env->GetStringUTFChars(jProotLibPath, nullptr);
     const char* rootfs = env->GetStringUTFChars(jRootfs, nullptr);
@@ -33,6 +34,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* installer = env->GetStringUTFChars(jInstaller, nullptr);
     const char* logFilePath = env->GetStringUTFChars(jLogFilePath, nullptr);
     const char* nativeLibDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
+    const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
 
     pid_t pid = fork();
     if (pid == 0) {
@@ -51,8 +53,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         setenv("WINEARCH", "win64", 1);
         setenv("DISPLAY", ":0", 1);
         
-        // ✅ libtalloc.so.2 එක හොයාගන්න nativeLibDir එක set කරන්න
-        setenv("LD_LIBRARY_PATH", nativeLibDir, 1);
+        // ✅ LD_LIBRARY_PATH එකට filesDir එකයි nativeLibDir එකයි දෙකම දෙන්න
+        std::string ldPath = std::string(filesDir) + ":" + std::string(nativeLibDir);
+        setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1);
 
         char* const argv[] = {
                 (char*)"proot",
@@ -82,6 +85,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     env->ReleaseStringUTFChars(jInstaller, installer);
     env->ReleaseStringUTFChars(jLogFilePath, logFilePath);
     env->ReleaseStringUTFChars(jNativeLibDir, nativeLibDir);
+    env->ReleaseStringUTFChars(jFilesDir, filesDir);
 
     return 0;
 }
