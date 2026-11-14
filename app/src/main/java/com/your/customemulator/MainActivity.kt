@@ -55,72 +55,85 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupNativeEnvironment() {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                Logger.log(this@MainActivity, "App started. Checking files...")
-                
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            Logger.log(this@MainActivity, "App started. Checking files...")
+            
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Checking files...", Toast.LENGTH_SHORT).show()
+            }
+
+            val imagefsDir = File(filesDir, "imagefs")
+            val assetFiles = assets.list("") ?: arrayOf()
+            val hasRootfs = assetFiles.contains("rootfs.tzst")
+
+            if (!hasRootfs) {
+                Logger.log(this@MainActivity, "ERROR: rootfs.tzst NOT FOUND in assets!")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Checking files...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Error: rootfs.tzst NOT FOUND!", Toast.LENGTH_LONG).show()
                 }
+                return@launch
+            }
 
-                val imagefsDir = File(filesDir, "imagefs")
-                val assetFiles = assets.list("") ?: arrayOf()
-                val hasRootfs = assetFiles.contains("rootfs.tzst")
+            Logger.log(this@MainActivity, "Files found. Starting extraction...")
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Extracting... Please wait.", Toast.LENGTH_LONG).show()
+            }
 
-                if (!hasRootfs) {
-                    Logger.log(this@MainActivity, "ERROR: rootfs.tzst NOT FOUND in assets!")
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Error: rootfs.tzst NOT FOUND!", Toast.LENGTH_LONG).show()
-                    }
-                    return@launch
-                }
+            // Extract කරන්න කලින් පරණ ෆයිල්ස් තියෙනවා නම් මකන්න
+            if (imagefsDir.exists()) {
+                Logger.log(this@MainActivity, "Deleting old imagefs folder...")
+                imagefsDir.deleteRecursively()
+            }
 
-                Logger.log(this@MainActivity, "Files found. Starting extraction...")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Extracting... Please wait.", Toast.LENGTH_LONG).show()
+            // Extraction එක run කරන්න
+            AssetExtractor.extractAssets(this@MainActivity)
+            
+            // ========== Wine, Box64 සහ Proot චෙක් කරන්න ==========
+            Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
+            
+            val rootfsDir = File(imagefsDir, "rootfs")
+            
+            // 1. ෆයිල්ස් තියෙනවද බලන්න
+            val wineFile = File(rootfsDir, "opt/wine/bin/wine")
+            val box64File = File(rootfsDir, "usr/bin/box64")
+            val prootFile = File(rootfsDir, "usr/bin/proot")
+            
+            Logger.log(this@MainActivity, "Wine exists: ${wineFile.exists()}")
+            Logger.log(this@MainActivity, "Box64 exists: ${box64File.exists()}")
+            Logger.log(this@MainActivity, "Proot exists: ${prootFile.exists()}")
+            
+            // 2. ඒවා Run කරන්න පුළුවන් (Executable) ද බලන්න
+            if (wineFile.exists()) {
+                Logger.log(this@MainActivity, "Wine can execute: ${wineFile.canExecute()}")
+            }
+            if (box64File.exists()) {
+                Logger.log(this@MainActivity, "Box64 can execute: ${box64File.canExecute()}")
+            }
+            if (prootFile.exists()) {
+                Logger.log(this@MainActivity, "Proot can execute: ${prootFile.canExecute()}")
+            }
+            
+            withContext(Dispatchers.Main) {
+                val allReady = wineFile.exists() && box64File.exists() && prootFile.exists()
+                if (allReady) {
+                    Toast.makeText(this@MainActivity, "SUCCESS! Wine, Box64 and Proot are ready.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "Extraction done but some files are missing. Check log.", Toast.LENGTH_LONG).show()
                 }
+            }
 
-                // Extract කරන්න කලින් පරණ ෆයිල්ස් තියෙනවා නම් මකන්න
-                if (imagefsDir.exists()) {
-                    Logger.log(this@MainActivity, "Deleting old imagefs folder...")
-                    imagefsDir.deleteRecursively()
-                }
-
-                // Extraction එක run කරන්න
-                AssetExtractor.extractAssets(this@MainActivity)
-                
-                // ========== Wine හොයන කොටස ==========
-                Logger.log(this@MainActivity, "Checking for Wine...")
-                
-                val rootfsDir = File(imagefsDir, "rootfs")
-                
-                // 1. Wine තියෙන ඇත්ත තැන (opt/wine/bin/wine) check කරන්න
-                val wineFile = File(rootfsDir, "opt/wine/bin/wine")
-                val box64File = File(rootfsDir, "usr/bin/box64")
-                
-                Logger.log(this@MainActivity, "Wine file exists: ${wineFile.exists()}")
-                Logger.log(this@MainActivity, "Box64 file exists: ${box64File.exists()}")
-                
-                withContext(Dispatchers.Main) {
-                    if (wineFile.exists()) {
-                        Toast.makeText(this@MainActivity, "SUCCESS! Wine is ready.", Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(this@MainActivity, "Extraction done but Wine not found.", Toast.LENGTH_LONG).show()
-                    }
-                }
-
-            } catch (e: Exception) {
-                Logger.log(this@MainActivity, "CRASH ERROR: ${e.message}")
-                e.stackTrace.forEach { element ->
-                    Logger.log(this@MainActivity, "  at $element")
-                }
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "CRASH: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+        } catch (e: Exception) {
+            Logger.log(this@MainActivity, "CRASH ERROR: ${e.message}")
+            e.stackTrace.forEach { element ->
+                Logger.log(this@MainActivity, "  at $element")
+            }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "CRASH: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
-
+}
     private fun createDirectGameShortcut(context: Context, gameName: String, gameExePath: String, iconResId: Int) {
         val shortcutIntent = Intent(context, EmulatorActivity::class.java).apply {
             action = Intent.ACTION_VIEW
