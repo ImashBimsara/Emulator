@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ✅ filesDir එක අලුතෙන් එකතු කළා
     external fun runProotJNI(
         prootLibPath: String,
         rootfs: String,
@@ -41,7 +42,8 @@ class MainActivity : AppCompatActivity() {
         wine: String,
         installer: String,
         logFilePath: String,
-        nativeLibDir: String
+        nativeLibDir: String,
+        filesDir: String
     ): Int
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -221,7 +223,7 @@ class MainActivity : AppCompatActivity() {
                 Logger.log(this, "=== Starting Wine Installation via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
     
-                // ✅ nativeLibDir එකත් යවන්න
+                // ✅ filesDir එකත් යවන්න
                 val result = runProotJNI(
                     prootLibPath, 
                     rootfsDir, 
@@ -230,7 +232,8 @@ class MainActivity : AppCompatActivity() {
                     wineInternalPath, 
                     installerInternalPath,
                     logFilePath,
-                    nativeLibDir
+                    nativeLibDir,
+                    filesDir.absolutePath // ✅ මේක අලුතෙන් එකතු කළා
                 )
                 
                 Logger.log(this, "JNI returned: $result")
