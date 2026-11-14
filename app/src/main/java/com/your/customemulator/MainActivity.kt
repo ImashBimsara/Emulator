@@ -40,7 +40,8 @@ class MainActivity : AppCompatActivity() {
         box64: String,
         wine: String,
         installer: String,
-        logFilePath: String
+        logFilePath: String,
+        nativeLibDir: String
     ): Int
 
     override fun onCreate(savedInstanceState: Bundle?) {
