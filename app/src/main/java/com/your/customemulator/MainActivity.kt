@@ -210,30 +210,40 @@ class MainActivity : AppCompatActivity() {
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
                 
-                // ✅ හරි Paths (proot එක ඇතුළේ තියෙන විදිහට)
                 val box64InternalPath = "/usr/bin/box64"
                 val wineInternalPath = "/opt/wine/bin/wine"
                 val installerInternalPath = "/home/xuser/installer.exe"
                 val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
+                
+                // ✅ Wine output එක ලියන්න ඕන file එකේ path එක
+                val logFilePath = File(filesDir, "wine_output.log").absolutePath
     
                 Logger.log(this, "=== Starting Wine Installation via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
-                Logger.log(this, "Rootfs (host): $rootfsDir")
-                Logger.log(this, "Box64 (internal): $box64InternalPath")
-                Logger.log(this, "Wine (internal): $wineInternalPath")
-                Logger.log(this, "Installer (internal): $installerInternalPath")
     
-                // ✅ JNI function එකට හරි Paths ටික යවන්න
+                // ✅ JNI function එකට logFilePath එකත් යවන්න
                 val result = runProotJNI(
                     prootLibPath, 
                     rootfsDir, 
                     winePrefixHostPath, 
                     box64InternalPath, 
                     wineInternalPath, 
-                    installerInternalPath
+                    installerInternalPath,
+                    logFilePath
                 )
                 
                 Logger.log(this, "JNI returned: $result")
+                
+                // ✅ ඊට පස්සේ අර log file එකේ තියෙන දේවල් අපේ emulator_log.txt එකට ලියන්න
+                val wineOutputFile = File(logFilePath)
+                if (wineOutputFile.exists()) {
+                    Logger.log(this, "=== Wine Output ===")
+                    wineOutputFile.readLines().forEach { line ->
+                        Logger.log(this, "WINE_OUTPUT: $line")
+                    }
+                } else {
+                    Logger.log(this, "❌ wine_output.log not found!")
+                }
                 
                 runOnUiThread {
                     Toast.makeText(this, "JNI installation finished. Check log.", Toast.LENGTH_LONG).show()
