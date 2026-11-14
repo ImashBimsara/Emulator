@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #define LOG_TAG "ProotJNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -20,7 +21,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         jstring jWinePrefix,
         jstring jBox64,
         jstring jWine,
-        jstring jInstaller) {
+        jstring jInstaller,
+        jstring jLogFilePath) {
 
     const char* prootLibPath = env->GetStringUTFChars(jProotLibPath, nullptr);
     const char* rootfs = env->GetStringUTFChars(jRootfs, nullptr);
@@ -28,14 +30,20 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* box64 = env->GetStringUTFChars(jBox64, nullptr);
     const char* wine = env->GetStringUTFChars(jWine, nullptr);
     const char* installer = env->GetStringUTFChars(jInstaller, nullptr);
-
-    LOGI("Starting Proot...");
-    LOGI("Rootfs: %s", rootfs);
-    LOGI("WinePrefix: %s", winePrefix);
+    const char* logFilePath = env->GetStringUTFChars(jLogFilePath, nullptr);
 
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process - Environment Variables set කරන්න
+        // Child process
+        // Redirect stdout සහ stderr file එකකට ලියන්න
+        int fd = open(logFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (fd != -1) {
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+        }
+
+        // Environment variables set කරන්න
         setenv("PROOT_NO_SECURE", "1", 1);
         setenv("WINEPREFIX", winePrefix, 1);
         setenv("WINEDEBUG", "-all", 1);
@@ -53,7 +61,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         };
 
         execv(prootLibPath, argv);
-        LOGE("execv failed: %s", strerror(errno));
+        // execv fail වුණොත් මේක log වෙයි
+        dprintf(STDERR_FILENO, "execv failed: %s\n", strerror(errno));
         _exit(1);
     } else if (pid > 0) {
         int status;
@@ -69,6 +78,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     env->ReleaseStringUTFChars(jBox64, box64);
     env->ReleaseStringUTFChars(jWine, wine);
     env->ReleaseStringUTFChars(jInstaller, installer);
+    env->ReleaseStringUTFChars(jLogFilePath, logFilePath);
 
     return 0;
 }
