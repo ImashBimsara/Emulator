@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.widget.Button
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -32,7 +33,7 @@ class MainActivity : AppCompatActivity() {
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
         val btnInstallGame = findViewById<Button>(R.id.btnInstallGame)
         val etGameName = findViewById<EditText>(R.id.etGameName)
-        val etExePath = findViewById<EditText>(R.id.etExePath)
+        val tvSelectedInstaller = findViewById<TextView>(R.id.tvSelectedInstaller) // අලුත් TextView එක
 
         // ✅ File Picker එක (Game Installer එක තෝරන්න)
         val pickInstallerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -40,7 +41,7 @@ class MainActivity : AppCompatActivity() {
                 val uri = result.data?.data
                 if (uri != null) {
                     val fileName = getFileNameFromUri(this, uri)
-                    etExePath.setText(fileName)
+                    tvSelectedInstaller.text = fileName // ෆයිල් එකේ නම පෙන්නන්න
                     Toast.makeText(this, "Selected: $fileName", Toast.LENGTH_SHORT).show()
                     
                     // ෆයිල් එක App එකට copy කරන්න
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // ✅ Install Button එක (File Picker එක open කරන්න)
         btnInstallGame.setOnClickListener {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -61,16 +63,16 @@ class MainActivity : AppCompatActivity() {
             pickInstallerLauncher.launch(intent)
         }
 
-        // ✅ Game Shortcut එකක් හදන්න (ඔයාගේ කලින් එක)
+        // ✅ Game Shortcut එකක් හදන්න
         btnSelectGame.setOnClickListener {
             val gameName = etGameName.text.toString()
-            val exePath = etExePath.text.toString()
+            val installerName = tvSelectedInstaller.text.toString()
 
-            if (gameName.isNotEmpty() && exePath.isNotEmpty()) {
-                createDirectGameShortcut(this, gameName, exePath, android.R.drawable.ic_media_play)
+            if (gameName.isNotEmpty() && installerName.isNotEmpty()) {
+                createDirectGameShortcut(this, gameName, installerName, android.R.drawable.ic_media_play)
                 Toast.makeText(this, "Shortcut added to Home Screen!", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Please enter game name and .exe path", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please enter game name and select installer", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -101,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ... (setupNativeEnvironment, createDirectGameShortcut, installGameAutomatically වගේ අනිත් functions ටික එහෙමම තියන්න)
     private fun setupNativeEnvironment() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -181,14 +184,12 @@ class MainActivity : AppCompatActivity() {
         ShortcutManagerCompat.requestPinShortcut(context, shortcutInfo, null)
     }
 
-    // ✅ Game Installer එක Wine එකෙන් run කරන function එක
     private fun installGameAutomatically(installerPath: String) {
         Thread {
             try {
                 val imagefsDir = File(filesDir, "imagefs").absolutePath
                 val rootfsDir = File(imagefsDir, "rootfs")
                 
-                // Wine එකට පේන විදිහට installer එක rootfs එක ඇතුළට copy කරන්න
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
                 
@@ -197,7 +198,6 @@ class MainActivity : AppCompatActivity() {
                 val prootPath = File(rootfsDir, "usr/bin/proot").absolutePath
                 val winePrefix = File(filesDir, "wineprefix").absolutePath
 
-                // Wine එකට rootfs එක ඇතුළේ path එක දෙන්න ඕනේ
                 val wineInstallerPath = "/home/xuser/installer.exe"
 
                 val installScript = StringBuilder().apply {
