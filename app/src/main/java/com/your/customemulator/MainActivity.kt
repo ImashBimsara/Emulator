@@ -23,19 +23,16 @@ import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
-    // ✅ JNI library එක load කරන්න
     companion object {
         init {
             try {
                 System.loadLibrary("prootjni")
-                Logger.log(null, "✅ libprootjni.so loaded successfully")
             } catch (e: UnsatisfiedLinkError) {
-                Logger.log(null, "❌ Failed to load libprootjni.so: ${e.message}")
+                e.printStackTrace()
             }
         }
     }
 
-    // ✅ Native function එක declare කරන්න
     external fun runProotJNI(
         prootLibPath: String,
         rootfs: String,
@@ -56,7 +53,6 @@ class MainActivity : AppCompatActivity() {
         val etGameName = findViewById<EditText>(R.id.etGameName)
         val tvSelectedInstaller = findViewById<TextView>(R.id.tvSelectedInstaller)
 
-        // ✅ File Picker එක
         val pickInstallerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
                 val uri = result.data?.data
@@ -204,13 +200,11 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val imagefsDir = File(filesDir, "imagefs").absolutePath
-                val rootfsDir = File(imagefsDir, "rootfs")
+                val rootfsDir = File(imagefsDir, "rootfs").absolutePath // ✅ String එකක් කළා
                 
-                // ✅ proot එක nativeLibraryDir එකෙන් ගන්න
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibPath = File(nativeLibDir, "libproot.so").absolutePath
                 
-                // installer එක rootfs එක ඇතුළට copy කරන්න
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
                 
@@ -222,7 +216,7 @@ class MainActivity : AppCompatActivity() {
                 Logger.log(this, "Proot Lib: $prootLibPath")
                 Logger.log(this, "Installer: $wineInstallerPath")
 
-                // ✅ JNI function එක call කරන්න
+                // ✅ JNI function එක call කරන්න (දැන් rootfsDir කියන්නේ String එකක්)
                 val result = runProotJNI(prootLibPath, rootfsDir, box64Path, winePath, wineInstallerPath)
                 
                 Logger.log(this, "JNI returned: $result")
