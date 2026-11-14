@@ -56,7 +56,7 @@ object AssetExtractor {
             
             box64TempDir.deleteRecursively()
     
-            // ✅ proot එක copy කරලා execute permission එක දෙන්න (මේක දැන් try එක ඇතුළේ)
+            // ✅ proot එක copy කරලා execute permission එක දෙන්න
             Logger.log(context, "Copying proot to usr/bin...")
             val prootSource = File(destDir, "rootfs/usr/bin/proot")
             if (!prootSource.exists()) {
@@ -72,6 +72,31 @@ object AssetExtractor {
                 } catch (e: Exception) {
                     Logger.log(context, "❌ Error copying proot: ${e.message}")
                 }
+            }
+            
+            // ✅ Box64 එකට execute permission එක දෙන්න
+            val box64File = File(usrBinDir, "box64")
+            if (box64File.exists()) {
+                box64File.setExecutable(true)
+                Logger.log(context, "✅ Box64 executable permission set")
+            }
+            
+            // ✅ Wine එකට execute permission එක දෙන්න
+            val wineFile = File(destDir, "rootfs/opt/wine/bin/wine")
+            if (wineFile.exists()) {
+                wineFile.setExecutable(true)
+                Logger.log(context, "✅ Wine executable permission set")
+            }
+            
+            // ✅ Wine ෆෝල්ඩර් එකේ තියෙන අනිත් ෆයිල්ස් වලටත් permission දෙන්න
+            val wineDir = File(destDir, "rootfs/opt/wine/bin")
+            if (wineDir.exists()) {
+                wineDir.listFiles()?.forEach { file ->
+                    if (file.isFile) {
+                        file.setExecutable(true)
+                    }
+                }
+                Logger.log(context, "✅ All wine bin files made executable")
             }
     
             Logger.log(context, "--- Extraction Completed Successfully ---")
