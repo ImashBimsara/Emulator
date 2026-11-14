@@ -100,6 +100,20 @@ object AssetExtractor {
                 }
                 Logger.log(context, "✅ All wine bin files made executable")
             }
+            
+            // ✅ libtalloc.so.2 එක assets එකෙන් filesDir එකට copy කරන්න
+            Logger.log(context, "Copying libtalloc.so.2 to filesDir...")
+            val tallocDest = File(context.filesDir, "libtalloc.so.2")
+            try {
+                context.assets.open("libtalloc.so.2").use { input ->
+                    FileOutputStream(tallocDest).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Logger.log(context, "✅ libtalloc.so.2 copied successfully!")
+            } catch (e: Exception) {
+                Logger.log(context, "❌ Error copying libtalloc.so.2: ${e.message}")
+            }
     
             Logger.log(context, "--- Extraction Completed Successfully ---")
         } catch (e: Exception) {
