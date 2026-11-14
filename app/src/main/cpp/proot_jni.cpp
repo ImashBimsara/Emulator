@@ -22,7 +22,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         jstring jBox64,
         jstring jWine,
         jstring jInstaller,
-        jstring jLogFilePath) {
+        jstring jLogFilePath,
+        jstring jNativeLibDir) {
 
     const char* prootLibPath = env->GetStringUTFChars(jProotLibPath, nullptr);
     const char* rootfs = env->GetStringUTFChars(jRootfs, nullptr);
@@ -31,11 +32,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* wine = env->GetStringUTFChars(jWine, nullptr);
     const char* installer = env->GetStringUTFChars(jInstaller, nullptr);
     const char* logFilePath = env->GetStringUTFChars(jLogFilePath, nullptr);
+    const char* nativeLibDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
 
     pid_t pid = fork();
     if (pid == 0) {
         // Child process
-        // Redirect stdout සහ stderr file එකකට ලියන්න
         int fd = open(logFilePath, O_WRONLY | O_CREAT | O_TRUNC, 0666);
         if (fd != -1) {
             dup2(fd, STDOUT_FILENO);
@@ -49,8 +50,10 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         setenv("WINEDEBUG", "-all", 1);
         setenv("WINEARCH", "win64", 1);
         setenv("DISPLAY", ":0", 1);
+        
+        // ✅ libtalloc.so.2 එක හොයාගන්න nativeLibDir එක set කරන්න
+        setenv("LD_LIBRARY_PATH", nativeLibDir, 1);
 
-        // proot command එක හදමු
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"-r", (char*)rootfs,
@@ -61,7 +64,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         };
 
         execv(prootLibPath, argv);
-        // execv fail වුණොත් මේක log වෙයි
         dprintf(STDERR_FILENO, "execv failed: %s\n", strerror(errno));
         _exit(1);
     } else if (pid > 0) {
@@ -79,6 +81,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     env->ReleaseStringUTFChars(jWine, wine);
     env->ReleaseStringUTFChars(jInstaller, installer);
     env->ReleaseStringUTFChars(jLogFilePath, logFilePath);
+    env->ReleaseStringUTFChars(jNativeLibDir, nativeLibDir);
 
     return 0;
 }
