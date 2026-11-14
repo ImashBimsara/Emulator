@@ -33,37 +33,33 @@ class MainActivity : AppCompatActivity() {
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
         val btnInstallGame = findViewById<Button>(R.id.btnInstallGame)
         val etGameName = findViewById<EditText>(R.id.etGameName)
-        val tvSelectedInstaller = findViewById<TextView>(R.id.tvSelectedInstaller) // අලුත් TextView එක
+        val tvSelectedInstaller = findViewById<TextView>(R.id.tvSelectedInstaller)
 
-        // ✅ File Picker එක (Game Installer එක තෝරන්න)
+        // ✅ File Picker එක
         val pickInstallerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
                 val uri = result.data?.data
                 if (uri != null) {
                     val fileName = getFileNameFromUri(this, uri)
-                    tvSelectedInstaller.text = fileName // ෆයිල් එකේ නම පෙන්නන්න
+                    tvSelectedInstaller.text = fileName
                     Toast.makeText(this, "Selected: $fileName", Toast.LENGTH_SHORT).show()
                     
-                    // ෆයිල් එක App එකට copy කරන්න
                     val localFile = File(filesDir, "installer.exe")
                     copyFileToInternalStorage(this, uri, localFile)
                     
-                    // දැන් Wine එකෙන් install කරන්න
                     installGameAutomatically(localFile.absolutePath)
                 }
             }
         }
 
-        // ✅ Install Button එක (File Picker එක open කරන්න)
         btnInstallGame.setOnClickListener {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
-                type = "*/*" // ඕනෑම ෆයිල් එකක් තෝරන්න පුළුවන්
+                type = "*/*"
             }
             pickInstallerLauncher.launch(intent)
         }
 
-        // ✅ Game Shortcut එකක් හදන්න
         btnSelectGame.setOnClickListener {
             val gameName = etGameName.text.toString()
             val installerName = tvSelectedInstaller.text.toString()
@@ -77,7 +73,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ ෆයිල් එකේ නම ගන්න function එක
     private fun getFileNameFromUri(context: Context, uri: Uri): String {
         var fileName = "installer.exe"
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -89,7 +84,6 @@ class MainActivity : AppCompatActivity() {
         return fileName
     }
 
-    // ✅ ෆයිල් එක App එකට copy කරන function එක
     private fun copyFileToInternalStorage(context: Context, uri: Uri, destFile: File) {
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -103,7 +97,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ... (setupNativeEnvironment, createDirectGameShortcut, installGameAutomatically වගේ අනිත් functions ටික එහෙමම තියන්න)
     private fun setupNativeEnvironment() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -141,14 +134,17 @@ class MainActivity : AppCompatActivity() {
                 val rootfsDir = File(imagefsDir, "rootfs")
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
                 val box64File = File(rootfsDir, "usr/bin/box64")
-                val prootFile = File(rootfsDir, "usr/bin/proot")
+                
+                // ✅ proot එක nativeLibraryDir එකේ තියෙනවද බලන්න
+                val nativeLibDir = applicationInfo.nativeLibraryDir
+                val prootLibFile = File(nativeLibDir, "libproot.so")
                 
                 Logger.log(this@MainActivity, "Wine exists: ${wineFile.exists()}")
                 Logger.log(this@MainActivity, "Box64 exists: ${box64File.exists()}")
-                Logger.log(this@MainActivity, "Proot exists: ${prootFile.exists()}")
+                Logger.log(this@MainActivity, "Proot (lib) exists: ${prootLibFile.exists()}")
                 
                 withContext(Dispatchers.Main) {
-                    val allReady = wineFile.exists() && box64File.exists() && prootFile.exists()
+                    val allReady = wineFile.exists() && box64File.exists() && prootLibFile.exists()
                     if (allReady) {
                         Toast.makeText(this@MainActivity, "SUCCESS! Wine, Box64 and Proot are ready.", Toast.LENGTH_LONG).show()
                     } else {
@@ -190,12 +186,16 @@ class MainActivity : AppCompatActivity() {
                 val imagefsDir = File(filesDir, "imagefs").absolutePath
                 val rootfsDir = File(imagefsDir, "rootfs")
                 
+                // ✅ proot එක nativeLibraryDir එකෙන් ගන්න
+                val nativeLibDir = applicationInfo.nativeLibraryDir
+                val prootPath = File(nativeLibDir, "libproot.so").absolutePath
+                
+                // installer එක rootfs එක ඇතුළට copy කරන්න
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
                 
                 val winePath = File(rootfsDir, "opt/wine/bin/wine").absolutePath
                 val box64Path = File(rootfsDir, "usr/bin/box64").absolutePath
-                val prootPath = File(rootfsDir, "usr/bin/proot").absolutePath
                 val winePrefix = File(filesDir, "wineprefix").absolutePath
 
                 val wineInstallerPath = "/home/xuser/installer.exe"
