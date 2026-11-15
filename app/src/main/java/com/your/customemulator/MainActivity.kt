@@ -212,8 +212,8 @@ class MainActivity : AppCompatActivity() {
                 
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
-                
-                val box64InternalPath = "/usr/bin/box64"
+       
+                val box64InternalPath = "/usr/local/bin/box64" 
                 val wineInternalPath = "/opt/wine/bin/wine"
                 val installerInternalPath = "/home/xuser/installer.exe"
                 val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
