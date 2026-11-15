@@ -240,6 +240,7 @@ class MainActivity : AppCompatActivity() {
                         FileInputStream(box64FullPath).use { input ->
                             input.read(bytes)
                         }
+                        // මේක ELF එකක් ද (7F 45 4C 46) කියලා බලන්න
                         Logger.log(this, "Box64 magic bytes: ${bytes.joinToString(" ") { String.format("%02X", it) }}")
                     } catch (e: Exception) {
                         Logger.log(this, "❌ Error reading box64 bytes: ${e.message}")
@@ -263,7 +264,16 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val linker64 = File("/apex/com.android.runtime/bin/linker64")
-                Logger.log(this, "linker64 exists: ${linker64.exists()}")
+                Logger.log(this, "Host linker64 exists: ${linker64.exists()}")
+                
+                // ✅ අලුතෙන් එකතු කරපු Interpreter චෙක් එක
+                val linker64Guest = File(rootfsDir, "system/bin/linker64")
+                val ldLinuxGuest = File(rootfsDir, "lib/ld-linux-aarch64.so.1")
+                val ldLinuxGuestUsr = File(rootfsDir, "usr/lib/ld-linux-aarch64.so.1")
+                
+                Logger.log(this, "Guest system/bin/linker64 exists: ${linker64Guest.exists()}")
+                Logger.log(this, "Guest lib/ld-linux-aarch64.so.1 exists: ${ldLinuxGuest.exists()}")
+                Logger.log(this, "Guest usr/lib/ld-linux-aarch64.so.1 exists: ${ldLinuxGuestUsr.exists()}")
                 // =====================================
     
                 // ✅ filesDir එකත් යවන්න
