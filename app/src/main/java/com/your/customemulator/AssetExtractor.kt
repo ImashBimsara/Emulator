@@ -114,6 +114,20 @@ object AssetExtractor {
             } catch (e: Exception) {
                 Logger.log(context, "❌ Error copying libtalloc.so.2: ${e.message}")
             }
+
+            // ✅ libandroid-shmem.so එක assets එකෙන් filesDir එකට copy කරන්න
+            Logger.log(context, "Copying libandroid-shmem.so to filesDir...")
+            val shmemDest = File(context.filesDir, "libandroid-shmem.so")
+            try {
+                context.assets.open("libandroid-shmem.so").use { input ->
+                    FileOutputStream(shmemDest).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Logger.log(context, "✅ libandroid-shmem.so copied successfully!")
+            } catch (e: Exception) {
+                Logger.log(context, "❌ Error copying libandroid-shmem.so: ${e.message}")
+            }
     
             Logger.log(context, "--- Extraction Completed Successfully ---")
         } catch (e: Exception) {
