@@ -157,7 +157,7 @@ class MainActivity : AppCompatActivity() {
                 val rootfsDir = File(imagefsDir, "rootfs")
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
                 // ✅ path එක usr/local/bin/box64 ලෙස වෙනස් කළා
-                val box64File = File(rootfsDir, "usr/local/bin/box64")
+                val box64InternalPath = "/usr/local/bin/box64"
                 
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibFile = File(nativeLibDir, "libproot.so")
