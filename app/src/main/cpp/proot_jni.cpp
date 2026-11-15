@@ -36,6 +36,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* nativeLibDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
     const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
 
+    // ✅ usr/lib එක lib එකට bind කරන්න හදන path එක
+    std::string usrLibPath = std::string(rootfs) + "/usr/lib";
+    std::string libPath = std::string(rootfs) + "/lib";
+    std::string bindLibArg = usrLibPath + ":" + libPath;
+
     pid_t pid = fork();
     if (pid == 0) {
         // Child process
@@ -57,18 +62,19 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         std::string ldPath = std::string(filesDir) + ":" + std::string(nativeLibDir);
         setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1);
 
-        // ✅ වෙනස් කරපු තැන්: -w /, -b /data, /usr/bin/box64
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
                 (char*)"-0",
                 (char*)"-r", (char*)rootfs,
                 (char*)"-b", (char*)"/system",
+                (char*)"-b", (char*)"/apex",
                 (char*)"-b", (char*)"/vendor",
                 (char*)"-b", (char*)"/dev",
                 (char*)"-b", (char*)"/proc",
                 (char*)"-b", (char*)"/sys",
                 (char*)"-b", (char*)"/data",
+                (char*)"-b", (char*)bindLibArg.c_str(), // ✅ usr/lib -> lib
                 (char*)"-w", (char*)"/",
                 (char*)box64, 
                 (char*)wine,
