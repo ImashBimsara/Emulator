@@ -24,7 +24,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         jstring jInstaller,
         jstring jLogFilePath,
         jstring jNativeLibDir,
-        jstring jFilesDir) { // ✅ අලුතෙන් filesDir එක එකතු කළා
+        jstring jFilesDir) {
 
     const char* prootLibPath = env->GetStringUTFChars(jProotLibPath, nullptr);
     const char* rootfs = env->GetStringUTFChars(jRootfs, nullptr);
@@ -46,21 +46,30 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             close(fd);
         }
 
-        // Environment variables set කරන්න
+        // ✅ Termux tmp path එක හදන්න
+        setenv("PROOT_TMP_DIR", filesDir, 1);
         setenv("PROOT_NO_SECURE", "1", 1);
         setenv("WINEPREFIX", winePrefix, 1);
         setenv("WINEDEBUG", "-all", 1);
         setenv("WINEARCH", "win64", 1);
         setenv("DISPLAY", ":0", 1);
         
-        // ✅ LD_LIBRARY_PATH එකට filesDir එකයි nativeLibDir එකයි දෙකම දෙන්න
         std::string ldPath = std::string(filesDir) + ":" + std::string(nativeLibDir);
         setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1);
 
+        // ✅ Bind mounts ටික එකතු කළා
         char* const argv[] = {
                 (char*)"proot",
+                (char*)"--link2symlink",
+                (char*)"-0",
                 (char*)"-r", (char*)rootfs,
-                (char*)box64,
+                (char*)"-b", (char*)"/system",
+                (char*)"-b", (char*)"/vendor",
+                (char*)"-b", (char*)"/dev",
+                (char*)"-b", (char*)"/proc",
+                (char*)"-b", (char*)"/sys",
+                (char*)"-w", (char*)"/root",
+                (char*)"/usr/local/bin/box64", // ✅ අලුත් path එක (usr/local/bin)
                 (char*)wine,
                 (char*)installer,
                 nullptr
