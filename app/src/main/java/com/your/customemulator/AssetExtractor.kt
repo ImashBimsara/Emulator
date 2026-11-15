@@ -43,8 +43,24 @@ object AssetExtractor {
             Logger.log(context, "Copying all box64 files to rootfs...")
             box64TempDir.copyRecursively(File(destDir, "rootfs"), overwrite = true)
             
-            // ✅ box64 එකට execute permission එක දෙන්න (ඒක දැන් /usr/local/bin/box64 එකේ)
-            val box64File = File(destDir, "rootfs/usr/local/bin/box64")
+            // ✅ box64 එක /usr/bin එකටත් copy කරන්න (proot එකට හම්බවෙන්න)
+            val box64Source = File(box64TempDir, "usr/local/bin/box64")
+            val usrBinDir = File(destDir, "rootfs/usr/bin")
+            usrBinDir.mkdirs()
+            if (box64Source.exists()) {
+                box64Source.copyTo(File(usrBinDir, "box64"), overwrite = true)
+                Logger.log(context, "✅ Box64 copied to /usr/bin")
+            }
+            
+            // ✅ /root ෆෝල්ඩර් එක හදන්න (proot warning එක නවත්තන්න)
+            val rootDir = File(destDir, "rootfs/root")
+            if (!rootDir.exists()) {
+                rootDir.mkdirs()
+                Logger.log(context, "✅ Created /root directory")
+            }
+            
+            // ✅ box64 එකට execute permission එක දෙන්න (usr/bin/box64)
+            val box64File = File(usrBinDir, "box64")
             if (box64File.exists()) {
                 box64File.setExecutable(true)
                 try {
@@ -61,11 +77,6 @@ object AssetExtractor {
                     Logger.log(context, "❌ Error running chmod for box64: ${e.message}")
                 }
                 Logger.log(context, "✅ Box64 executable permission set")
-            } else {
-                Logger.log(context, "❌ box64 executable not found at: ${box64File.absolutePath}")
-                box64TempDir.walk().forEach { file ->
-                    Logger.log(context, "  Found in temp: ${file.relativeTo(box64TempDir)}")
-                }
             }
             
             box64TempDir.deleteRecursively()
