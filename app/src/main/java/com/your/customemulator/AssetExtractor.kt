@@ -39,32 +39,12 @@ object AssetExtractor {
             box64TempDir.mkdirs()
             extractTzst(context, "box64/box64-0.4.4.tzst", box64TempDir)
             
-            val box64Source = File(box64TempDir, "usr/local/bin/box64")
-            val usrBinDir = File(destDir, "rootfs/usr/bin")
-            usrBinDir.mkdirs()
+            // ✅ box64 ෆෝල්ඩර් එකේ තියෙන ඔක්කොම (executable + libs) rootfs එකට copy කරන්න
+            Logger.log(context, "Copying all box64 files to rootfs...")
+            box64TempDir.copyRecursively(File(destDir, "rootfs"), overwrite = true)
             
-            if (box64Source.exists()) {
-                Logger.log(context, "✅ Copying box64 from ${box64Source.absolutePath} to usr/bin...")
-                box64Source.copyTo(File(usrBinDir, "box64"), overwrite = true)
-                Logger.log(context, "✅ Box64 copied successfully!")
-            } else {
-                Logger.log(context, "❌ box64 executable not found at: ${box64Source.absolutePath}")
-                box64TempDir.walk().forEach { file ->
-                    Logger.log(context, "  Found in temp: ${file.relativeTo(box64TempDir)}")
-                }
-            }
-            
-            box64TempDir.deleteRecursively()
-    
-            // ✅ home/xuser ෆෝල්ඩර් එක හදන්න (Wine එකට ඕනේ)
-            val xuserDir = File(destDir, "rootfs/home/xuser")
-            if (!xuserDir.exists()) {
-                xuserDir.mkdirs()
-                Logger.log(context, "✅ Created home/xuser directory")
-            }
-    
-            // ✅ Box64 එකට execute permission එක දෙන්න
-            val box64File = File(usrBinDir, "box64")
+            // ✅ box64 එකට execute permission එක දෙන්න (ඒක දැන් /usr/local/bin/box64 එකේ)
+            val box64File = File(destDir, "rootfs/usr/local/bin/box64")
             if (box64File.exists()) {
                 box64File.setExecutable(true)
                 try {
@@ -81,6 +61,20 @@ object AssetExtractor {
                     Logger.log(context, "❌ Error running chmod for box64: ${e.message}")
                 }
                 Logger.log(context, "✅ Box64 executable permission set")
+            } else {
+                Logger.log(context, "❌ box64 executable not found at: ${box64File.absolutePath}")
+                box64TempDir.walk().forEach { file ->
+                    Logger.log(context, "  Found in temp: ${file.relativeTo(box64TempDir)}")
+                }
+            }
+            
+            box64TempDir.deleteRecursively()
+    
+            // ✅ home/xuser ෆෝල්ඩර් එක හදන්න (Wine එකට ඕනේ)
+            val xuserDir = File(destDir, "rootfs/home/xuser")
+            if (!xuserDir.exists()) {
+                xuserDir.mkdirs()
+                Logger.log(context, "✅ Created home/xuser directory")
             }
             
             // ✅ Wine එකට execute permission එක දෙන්න
