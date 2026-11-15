@@ -33,22 +33,38 @@ object AssetExtractor {
             Logger.log(context, "Extracting rootfs_patches.tzst...")
             extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
     
-            // 3. box64-0.4.4.tzst
-            Logger.log(context, "Extracting box64-0.4.4.tzst...")
+            // ✅ 3. box64 එක .tzst එකෙන් extract කරන්න
+            Logger.log(context, "Extracting box64.tzst...")
             val box64TempDir = File(destDir, "box64_temp")
             box64TempDir.mkdirs()
-            extractTzst(context, "box64/box64-0.4.4.tzst", box64TempDir)
+            extractTzst(context, "box64.tzst", box64TempDir)
             
-            Logger.log(context, "Copying all box64 files to rootfs...")
-            box64TempDir.copyRecursively(File(destDir, "rootfs"), overwrite = true)
-            
-            val box64Source = File(box64TempDir, "usr/local/bin/box64")
+            // box64 එක usr/bin එකට copy කරන්න
+            val box64Source = File(box64TempDir, "box64")
             val usrBinDir = File(destDir, "rootfs/usr/bin")
             usrBinDir.mkdirs()
+            
             if (box64Source.exists()) {
                 box64Source.copyTo(File(usrBinDir, "box64"), overwrite = true)
                 Logger.log(context, "✅ Box64 copied to /usr/bin")
+                
+                // ✅ box64 එකට execute permission එක දෙන්න
+                val box64File = File(usrBinDir, "box64")
+                box64File.setExecutable(true)
+                try {
+                    val chmodProcess = ProcessBuilder("chmod", "755", box64File.absolutePath)
+                        .redirectErrorStream(true)
+                        .start()
+                    chmodProcess.waitFor()
+                    Logger.log(context, "✅ Box64 chmod 755 successful")
+                } catch (e: Exception) {
+                    Logger.log(context, "❌ Error chmod box64: ${e.message}")
+                }
+            } else {
+                Logger.log(context, "❌ box64 not found in extracted tzst!")
             }
+            
+            box64TempDir.deleteRecursively()
             
             // ✅ /root ෆෝල්ඩර් එක හදන්න
             val rootDir = File(destDir, "rootfs/root")
@@ -57,7 +73,7 @@ object AssetExtractor {
                 Logger.log(context, "✅ Created /root directory")
             }
 
-            // ✅ /lib ෆෝල්ඩර් එක හදලා ld-linux-aarch64.so.1 copy කරන්න (Linux binaries සඳහා)
+            // ✅ /lib ෆෝල්ඩර් එක හදලා linker copy කරන්න
             val rootfsLibDir = File(destDir, "rootfs/lib")
             if (rootfsLibDir.exists()) {
                 rootfsLibDir.delete()
@@ -88,38 +104,6 @@ object AssetExtractor {
                 Logger.log(context, "✅ Copied host /apex/.../linker64 to rootfs")
             }
             
-            // ✅ box64 එකට execute permission එක දෙන්න (usr/local/bin/box64)
-            val box64LocalFile = File(destDir, "rootfs/usr/local/bin/box64")
-            if (box64LocalFile.exists()) {
-                box64LocalFile.setExecutable(true)
-                try {
-                    val chmodProcess = ProcessBuilder("chmod", "755", box64LocalFile.absolutePath)
-                        .redirectErrorStream(true)
-                        .start()
-                    chmodProcess.waitFor()
-                    Logger.log(context, "✅ Box64 chmod 755 successful at usr/local/bin")
-                } catch (e: Exception) {
-                    Logger.log(context, "❌ Error chmod usr/local/bin: ${e.message}")
-                }
-            }
-
-            // ✅ box64 එකට execute permission එක දෙන්න (usr/bin/box64)
-            val box64File = File(usrBinDir, "box64")
-            if (box64File.exists()) {
-                box64File.setExecutable(true)
-                try {
-                    val chmodProcess = ProcessBuilder("chmod", "755", box64File.absolutePath)
-                        .redirectErrorStream(true)
-                        .start()
-                    chmodProcess.waitFor()
-                    Logger.log(context, "✅ Box64 chmod 755 successful at usr/bin")
-                } catch (e: Exception) {
-                    Logger.log(context, "❌ Error chmod usr/bin: ${e.message}")
-                }
-            }
-            
-            box64TempDir.deleteRecursively()
-    
             // ✅ home/xuser ෆෝල්ඩර් එක හදන්න
             val xuserDir = File(destDir, "rootfs/home/xuser")
             if (!xuserDir.exists()) {
