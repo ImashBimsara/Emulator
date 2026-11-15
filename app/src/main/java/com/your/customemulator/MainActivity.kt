@@ -155,7 +155,8 @@ class MainActivity : AppCompatActivity() {
                 Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
                 val rootfsDir = File(imagefsDir, "rootfs")
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
-                val box64File = File(rootfsDir, "usr/bin/box64")
+                // ✅ මේකයි වෙනස් කළේ (usr/local/bin/box64)
+                val box64File = File(rootfsDir, "usr/local/bin/box64")
                 
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibFile = File(nativeLibDir, "libproot.so")
