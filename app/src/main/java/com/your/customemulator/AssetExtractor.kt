@@ -39,11 +39,9 @@ object AssetExtractor {
             box64TempDir.mkdirs()
             extractTzst(context, "box64/box64-0.4.4.tzst", box64TempDir)
             
-            // ✅ box64 ෆෝල්ඩර් එකේ තියෙන ඔක්කොම (executable + libs) rootfs එකට copy කරන්න
             Logger.log(context, "Copying all box64 files to rootfs...")
             box64TempDir.copyRecursively(File(destDir, "rootfs"), overwrite = true)
             
-            // ✅ box64 එක /usr/bin එකටත් copy කරන්න (proot එකට හම්බවෙන්න)
             val box64Source = File(box64TempDir, "usr/local/bin/box64")
             val usrBinDir = File(destDir, "rootfs/usr/bin")
             usrBinDir.mkdirs()
@@ -52,14 +50,14 @@ object AssetExtractor {
                 Logger.log(context, "✅ Box64 copied to /usr/bin")
             }
             
-            // ✅ /root ෆෝල්ඩර් එක හදන්න (proot warning එක නවත්තන්න)
+            // ✅ /root ෆෝල්ඩර් එක හදන්න
             val rootDir = File(destDir, "rootfs/root")
             if (!rootDir.exists()) {
                 rootDir.mkdirs()
                 Logger.log(context, "✅ Created /root directory")
             }
 
-            // ✅ rootfs/lib ෆෝල්ඩර් එක හදන්න (proot එකට ඕනේ)
+            // ✅ /lib ෆෝල්ඩර් එක හදලා ld-linux-aarch64.so.1 copy කරන්න (Linux binaries සඳහා)
             val rootfsLibDir = File(destDir, "rootfs/lib")
             if (rootfsLibDir.exists()) {
                 rootfsLibDir.delete()
@@ -67,13 +65,27 @@ object AssetExtractor {
             rootfsLibDir.mkdirs()
             Logger.log(context, "✅ Created /lib directory in rootfs")
 
-            // ✅ Interpreter එක (linker) /lib එකට copy කරන්න
             val guestLinker = File(destDir, "rootfs/usr/lib/ld-linux-aarch64.so.1")
             if (guestLinker.exists()) {
                 guestLinker.copyTo(File(rootfsLibDir, "ld-linux-aarch64.so.1"), overwrite = true)
                 Logger.log(context, "✅ Copied ld-linux-aarch64.so.1 to /lib")
-            } else {
-                Logger.log(context, "❌ ld-linux-aarch64.so.1 not found in usr/lib!")
+            }
+
+            // ✅ Android Linker එක rootfs එකට copy කරන්න (box64 එකට ඕනේ)
+            val systemBinDir = File(destDir, "rootfs/system/bin")
+            systemBinDir.mkdirs()
+            val hostLinker = File("/system/bin/linker64")
+            if (hostLinker.exists()) {
+                hostLinker.copyTo(File(systemBinDir, "linker64"), overwrite = true)
+                Logger.log(context, "✅ Copied host /system/bin/linker64 to rootfs")
+            }
+
+            val apexDir = File(destDir, "rootfs/apex/com.android.runtime/bin")
+            apexDir.mkdirs()
+            val hostApexLinker = File("/apex/com.android.runtime/bin/linker64")
+            if (hostApexLinker.exists()) {
+                hostApexLinker.copyTo(File(apexDir, "linker64"), overwrite = true)
+                Logger.log(context, "✅ Copied host /apex/.../linker64 to rootfs")
             }
             
             // ✅ box64 එකට execute permission එක දෙන්න (usr/local/bin/box64)
@@ -84,14 +96,10 @@ object AssetExtractor {
                     val chmodProcess = ProcessBuilder("chmod", "755", box64LocalFile.absolutePath)
                         .redirectErrorStream(true)
                         .start()
-                    val exitCode = chmodProcess.waitFor()
-                    if (exitCode == 0) {
-                        Logger.log(context, "✅ Box64 chmod 755 successful at usr/local/bin")
-                    } else {
-                        Logger.log(context, "❌ Box64 chmod failed at usr/local/bin with code: $exitCode")
-                    }
+                    chmodProcess.waitFor()
+                    Logger.log(context, "✅ Box64 chmod 755 successful at usr/local/bin")
                 } catch (e: Exception) {
-                    Logger.log(context, "❌ Error running chmod for box64 at usr/local/bin: ${e.message}")
+                    Logger.log(context, "❌ Error chmod usr/local/bin: ${e.message}")
                 }
             }
 
@@ -103,20 +111,16 @@ object AssetExtractor {
                     val chmodProcess = ProcessBuilder("chmod", "755", box64File.absolutePath)
                         .redirectErrorStream(true)
                         .start()
-                    val exitCode = chmodProcess.waitFor()
-                    if (exitCode == 0) {
-                        Logger.log(context, "✅ Box64 chmod 755 successful at usr/bin")
-                    } else {
-                        Logger.log(context, "❌ Box64 chmod failed at usr/bin with code: $exitCode")
-                    }
+                    chmodProcess.waitFor()
+                    Logger.log(context, "✅ Box64 chmod 755 successful at usr/bin")
                 } catch (e: Exception) {
-                    Logger.log(context, "❌ Error running chmod for box64 at usr/bin: ${e.message}")
+                    Logger.log(context, "❌ Error chmod usr/bin: ${e.message}")
                 }
             }
             
             box64TempDir.deleteRecursively()
     
-            // ✅ home/xuser ෆෝල්ඩර් එක හදන්න (Wine එකට ඕනේ)
+            // ✅ home/xuser ෆෝල්ඩර් එක හදන්න
             val xuserDir = File(destDir, "rootfs/home/xuser")
             if (!xuserDir.exists()) {
                 xuserDir.mkdirs()
@@ -130,39 +134,30 @@ object AssetExtractor {
                 Logger.log(context, "✅ Wine executable permission set")
             }
             
-            // ✅ Wine ෆෝල්ඩර් එකේ තියෙන අනිත් ෆයිල්ස් වලටත් permission දෙන්න
             val wineDir = File(destDir, "rootfs/opt/wine/bin")
             if (wineDir.exists()) {
                 wineDir.listFiles()?.forEach { file ->
-                    if (file.isFile) {
-                        file.setExecutable(true)
-                    }
+                    if (file.isFile) file.setExecutable(true)
                 }
                 Logger.log(context, "✅ All wine bin files made executable")
             }
             
-            // ✅ libtalloc.so.2 එක assets එකෙන් filesDir එකට copy කරන්න
-            Logger.log(context, "Copying libtalloc.so.2 to filesDir...")
+            // ✅ libtalloc.so.2 copy කරන්න
             val tallocDest = File(context.filesDir, "libtalloc.so.2")
             try {
                 context.assets.open("libtalloc.so.2").use { input ->
-                    FileOutputStream(tallocDest).use { output ->
-                        input.copyTo(output)
-                    }
+                    FileOutputStream(tallocDest).use { output -> input.copyTo(output) }
                 }
                 Logger.log(context, "✅ libtalloc.so.2 copied successfully!")
             } catch (e: Exception) {
                 Logger.log(context, "❌ Error copying libtalloc.so.2: ${e.message}")
             }
 
-            // ✅ libandroid-shmem.so එක assets එකෙන් filesDir එකට copy කරන්න
-            Logger.log(context, "Copying libandroid-shmem.so to filesDir...")
+            // ✅ libandroid-shmem.so copy කරන්න
             val shmemDest = File(context.filesDir, "libandroid-shmem.so")
             try {
                 context.assets.open("libandroid-shmem.so").use { input ->
-                    FileOutputStream(shmemDest).use { output ->
-                        input.copyTo(output)
-                    }
+                    FileOutputStream(shmemDest).use { output -> input.copyTo(output) }
                 }
                 Logger.log(context, "✅ libandroid-shmem.so copied successfully!")
             } catch (e: Exception) {
@@ -182,18 +177,14 @@ object AssetExtractor {
                 BufferedInputStream(inputStream, BUFFER_SIZE).use { bufferedInputStream ->
                     ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
                         TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
-                            
                             var entry = tarInputStream.nextEntry as? TarArchiveEntry
                             var count = 0
-                            
                             while (entry != null) {
                                 if (!tarInputStream.canReadEntryData(entry)) {
                                     entry = tarInputStream.nextEntry as? TarArchiveEntry
                                     continue
                                 }
-    
                                 val outFile = File(destFile, entry.name)
-    
                                 if (entry.isDirectory) {
                                     outFile.mkdirs()
                                 } else {
@@ -206,7 +197,6 @@ object AssetExtractor {
                                         }
                                     }
                                 }
-                                
                                 count++
                                 entry = tarInputStream.nextEntry as? TarArchiveEntry
                             }
