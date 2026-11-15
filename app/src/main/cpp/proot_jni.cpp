@@ -36,11 +36,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* nativeLibDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
     const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
 
-    // ✅ usr/lib එක lib එකට bind කරන්න හදන path එක
-    std::string usrLibPath = std::string(rootfs) + "/usr/lib";
-    std::string libPath = std::string(rootfs) + "/lib";
-    std::string bindLibArg = usrLibPath + ":" + libPath;
-
     pid_t pid = fork();
     if (pid == 0) {
         // Child process
@@ -51,7 +46,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             close(fd);
         }
 
-        // Environment variables set කරන්න
         setenv("PROOT_TMP_DIR", filesDir, 1);
         setenv("PROOT_NO_SECURE", "1", 1);
         setenv("WINEPREFIX", winePrefix, 1);
@@ -74,7 +68,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"-b", (char*)"/proc",
                 (char*)"-b", (char*)"/sys",
                 (char*)"-b", (char*)"/data",
-                (char*)"-b", (char*)bindLibArg.c_str(), // ✅ usr/lib -> lib
                 (char*)"-w", (char*)"/",
                 (char*)box64, 
                 (char*)wine,
