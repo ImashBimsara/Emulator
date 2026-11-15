@@ -59,16 +59,16 @@ object AssetExtractor {
                 Logger.log(context, "✅ Created /root directory")
             }
 
-            // ✅ lib ෆෝල්ඩර් එක හදලා interpreter (linker) එක copy කරන්න
-            val libDir = File(destDir, "rootfs/lib")
-            if (!libDir.exists()) {
-                libDir.mkdirs()
+            // ✅ fake_lib ෆෝල්ඩර් එක හදලා interpreter (linker) එක copy කරන්න
+            val fakeLibDir = File(destDir, "fake_lib")
+            if (!fakeLibDir.exists()) {
+                fakeLibDir.mkdirs()
             }
             
             val guestLinker = File(destDir, "rootfs/usr/lib/ld-linux-aarch64.so.1")
             if (guestLinker.exists()) {
-                guestLinker.copyTo(File(libDir, "ld-linux-aarch64.so.1"), overwrite = true)
-                Logger.log(context, "✅ Copied ld-linux-aarch64.so.1 to /lib")
+                guestLinker.copyTo(File(fakeLibDir, "ld-linux-aarch64.so.1"), overwrite = true)
+                Logger.log(context, "✅ Copied ld-linux-aarch64.so.1 to fake_lib")
             } else {
                 Logger.log(context, "❌ ld-linux-aarch64.so.1 not found in usr/lib!")
             }
