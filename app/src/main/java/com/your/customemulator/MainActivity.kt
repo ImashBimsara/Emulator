@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 
 class MainActivity : AppCompatActivity() {
 
@@ -214,7 +215,6 @@ class MainActivity : AppCompatActivity() {
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
        
-                // ✅ path එක /usr/local/bin/box64 ලෙස වෙනස් කළා
                 val box64InternalPath = "/usr/local/bin/box64" 
                 val wineInternalPath = "/opt/wine/bin/wine"
                 val installerInternalPath = "/home/xuser/installer.exe"
@@ -225,58 +225,74 @@ class MainActivity : AppCompatActivity() {
                 Logger.log(this, "=== Starting Wine Installation via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
 
-                // ========== DIAGNOSTIC LOGS ==========
-                Logger.log(this, "=== DIAGNOSTIC: Box64 File Info ===")
+                // ========== DEFINITIVE DIAGNOSTIC ==========
+                Logger.log(this, "=== DEFINITIVE DIAGNOSTIC ===")
                 val box64FullPath = File(rootfsDir, "usr/local/bin/box64")
-                Logger.log(this, "Box64 path: ${box64FullPath.absolutePath}")
-                Logger.log(this, "Box64 exists: ${box64FullPath.exists()}")
-                Logger.log(this, "Box64 size: ${box64FullPath.length()} bytes")
-                Logger.log(this, "Box64 canExecute: ${box64FullPath.canExecute()}")
-                Logger.log(this, "Box64 canRead: ${box64FullPath.canRead()}")
-
+                
                 if (box64FullPath.exists()) {
                     try {
+                        RandomAccessFile(box64FullPath, "r").use { raf ->
+                            val ident = ByteArray(16)
+                            raf.read(ident)
+                            if (ident[0] == 0x7F.toByte() && ident[1] == 'E'.code.toByte() && ident[2] == 'L'.code.toByte() && ident[3] == 'F'.code.toByte()) {
+                                Logger.log(this, "✅ Box64 is a valid ELF file.")
+                                val is64 = ident[4].toInt() == 2
+                                Logger.log(this, "ELF is 64-bit: $is64")
+
+                                // e_phoff is at offset 32 (8 bytes)
+                                raf.seek(32)
+                                val phoff = raf.readLong()
+                                // e_phentsize at offset 54, e_phnum at offset 56
+                                raf.seek(54)
+                                val phentsize = raf.readShort().toInt() and 0xFFFF
+                                raf.seek(56)
+                                val phnum = raf.readShort().toInt() and 0xFFFF
+
+                                Logger.log(this, "Program Headers: phoff=$phoff, phentsize=$phentsize, phnum=$phnum")
+
+                                for (i in 0 until phnum) {
+                                    val phdrStart = phoff + (i * phentsize)
+                                    raf.seek(phdrStart)
+                                    val ptype = raf.readInt()
+                                    if (ptype == 3) { // PT_INTERP
+                                        raf.seek(phdrStart + 8)
+                                        val poffset = raf.readLong()
+                                        val interpBytes = ByteArray(256)
+                                        raf.seek(poffset)
+                                        raf.read(interpBytes)
+                                        var end = 0
+                                        while (end < interpBytes.size && interpBytes[end] != 0.toByte()) end++
+                                        val interpPath = String(interpBytes, 0, end)
+                                        Logger.log(this, "🎯 box64 PT_INTERP is: '$interpPath'")
+                                    }
+                                }
+                            } else {
+                                Logger.log(this, "❌ Box64 is NOT a valid ELF file. First bytes: ${ident.take(4).joinToString(" ") { String.format("%02X", it) }}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Logger.log(this, "❌ Error reading box64 ELF: ${e.message}")
+                    }
+                }
+
+                val ourLinker = File(rootfsDir, "rootfs/lib/ld-linux-aarch64.so.1")
+                Logger.log(this, "Our /lib/ld-linux-aarch64.so.1 exists: ${ourLinker.exists()}, size: ${ourLinker.length()} bytes")
+                if (ourLinker.exists()) {
+                    try {
                         val bytes = ByteArray(4)
-                        FileInputStream(box64FullPath).use { input ->
+                        FileInputStream(ourLinker).use { input ->
                             input.read(bytes)
                         }
-                        // මේක ELF එකක් ද (7F 45 4C 46) කියලා බලන්න
-                        Logger.log(this, "Box64 magic bytes: ${bytes.joinToString(" ") { String.format("%02X", it) }}")
+                        Logger.log(this, "Our linker magic bytes: ${bytes.joinToString(" ") { String.format("%02X", it) }}")
                     } catch (e: Exception) {
-                        Logger.log(this, "❌ Error reading box64 bytes: ${e.message}")
+                        Logger.log(this, "❌ Error reading our linker: ${e.message}")
                     }
                 }
 
-                val usrLocalBinDir = File(rootfsDir, "usr/local/bin")
-                Logger.log(this, "usr/local/bin exists: ${usrLocalBinDir.exists()}")
-                if (usrLocalBinDir.exists()) {
-                    usrLocalBinDir.listFiles()?.forEach { file ->
-                        Logger.log(this, "  Found in usr/local/bin: ${file.name} (${file.length()} bytes)")
-                    }
-                }
-
-                val usrLocalLibDir = File(rootfsDir, "usr/local/lib")
-                Logger.log(this, "usr/local/lib exists: ${usrLocalLibDir.exists()}")
-                if (usrLocalLibDir.exists()) {
-                    usrLocalLibDir.listFiles()?.take(20)?.forEach { file ->
-                        Logger.log(this, "  Lib in usr/local/lib: ${file.name}")
-                    }
-                }
-
-                val linker64 = File("/apex/com.android.runtime/bin/linker64")
-                Logger.log(this, "Host linker64 exists: ${linker64.exists()}")
-                
-                // ✅ අලුතෙන් එකතු කරපු Interpreter චෙක් එක
-                val linker64Guest = File(rootfsDir, "system/bin/linker64")
-                val ldLinuxGuest = File(rootfsDir, "lib/ld-linux-aarch64.so.1")
-                val ldLinuxGuestUsr = File(rootfsDir, "usr/lib/ld-linux-aarch64.so.1")
-                
-                Logger.log(this, "Guest system/bin/linker64 exists: ${linker64Guest.exists()}")
-                Logger.log(this, "Guest lib/ld-linux-aarch64.so.1 exists: ${ldLinuxGuest.exists()}")
-                Logger.log(this, "Guest usr/lib/ld-linux-aarch64.so.1 exists: ${ldLinuxGuestUsr.exists()}")
-                // =====================================
+                val systemLinker = File("/system/bin/linker64")
+                Logger.log(this, "Host /system/bin/linker64 exists: ${systemLinker.exists()}")
+                // ============================================
     
-                // ✅ filesDir එකත් යවන්න
                 val result = runProotJNI(
                     prootLibPath, 
                     rootfsDir, 
