@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
@@ -33,7 +34,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ filesDir එක අලුතෙන් එකතු කළා
     external fun runProotJNI(
         prootLibPath: String,
         rootfs: String,
@@ -155,8 +155,8 @@ class MainActivity : AppCompatActivity() {
                 Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
                 val rootfsDir = File(imagefsDir, "rootfs")
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
-                // ✅ /usr/bin/box64 බලන්න
-                val box64File = File(rootfsDir, "usr/bin/box64")
+                // ✅ path එක usr/local/bin/box64 ලෙස වෙනස් කළා
+                val box64File = File(rootfsDir, "usr/local/bin/box64")
                 
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibFile = File(nativeLibDir, "libproot.so")
@@ -214,8 +214,8 @@ class MainActivity : AppCompatActivity() {
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
        
-                // ✅ box64 path එක /usr/bin/box64 කළා
-                val box64InternalPath = "/usr/bin/box64" 
+                // ✅ path එක /usr/local/bin/box64 ලෙස වෙනස් කළා
+                val box64InternalPath = "/usr/local/bin/box64" 
                 val wineInternalPath = "/opt/wine/bin/wine"
                 val installerInternalPath = "/home/xuser/installer.exe"
                 val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
@@ -224,6 +224,47 @@ class MainActivity : AppCompatActivity() {
     
                 Logger.log(this, "=== Starting Wine Installation via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
+
+                // ========== DIAGNOSTIC LOGS ==========
+                Logger.log(this, "=== DIAGNOSTIC: Box64 File Info ===")
+                val box64FullPath = File(rootfsDir, "usr/local/bin/box64")
+                Logger.log(this, "Box64 path: ${box64FullPath.absolutePath}")
+                Logger.log(this, "Box64 exists: ${box64FullPath.exists()}")
+                Logger.log(this, "Box64 size: ${box64FullPath.length()} bytes")
+                Logger.log(this, "Box64 canExecute: ${box64FullPath.canExecute()}")
+                Logger.log(this, "Box64 canRead: ${box64FullPath.canRead()}")
+
+                if (box64FullPath.exists()) {
+                    try {
+                        val bytes = ByteArray(4)
+                        FileInputStream(box64FullPath).use { input ->
+                            input.read(bytes)
+                        }
+                        Logger.log(this, "Box64 magic bytes: ${bytes.joinToString(" ") { String.format("%02X", it) }}")
+                    } catch (e: Exception) {
+                        Logger.log(this, "❌ Error reading box64 bytes: ${e.message}")
+                    }
+                }
+
+                val usrLocalBinDir = File(rootfsDir, "usr/local/bin")
+                Logger.log(this, "usr/local/bin exists: ${usrLocalBinDir.exists()}")
+                if (usrLocalBinDir.exists()) {
+                    usrLocalBinDir.listFiles()?.forEach { file ->
+                        Logger.log(this, "  Found in usr/local/bin: ${file.name} (${file.length()} bytes)")
+                    }
+                }
+
+                val usrLocalLibDir = File(rootfsDir, "usr/local/lib")
+                Logger.log(this, "usr/local/lib exists: ${usrLocalLibDir.exists()}")
+                if (usrLocalLibDir.exists()) {
+                    usrLocalLibDir.listFiles()?.take(20)?.forEach { file ->
+                        Logger.log(this, "  Lib in usr/local/lib: ${file.name}")
+                    }
+                }
+
+                val linker64 = File("/apex/com.android.runtime/bin/linker64")
+                Logger.log(this, "linker64 exists: ${linker64.exists()}")
+                // =====================================
     
                 // ✅ filesDir එකත් යවන්න
                 val result = runProotJNI(
@@ -235,7 +276,7 @@ class MainActivity : AppCompatActivity() {
                     installerInternalPath,
                     logFilePath,
                     nativeLibDir,
-                    filesDir.absolutePath // ✅ මේක අලුතෙන් එකතු කළා
+                    filesDir.absolutePath 
                 )
                 
                 Logger.log(this, "JNI returned: $result")
