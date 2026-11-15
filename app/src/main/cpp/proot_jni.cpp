@@ -36,10 +36,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* nativeLibDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
     const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
 
-    // ✅ fake_lib එක හදන path එක
-    std::string fakeLibPath = std::string(filesDir) + "/imagefs/fake_lib";
-    std::string bindLibArg = fakeLibPath + ":/lib";
-
     pid_t pid = fork();
     if (pid == 0) {
         // Child process
@@ -72,7 +68,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"-b", (char*)"/proc",
                 (char*)"-b", (char*)"/sys",
                 (char*)"-b", (char*)"/data",
-                (char*)"-b", (char*)bindLibArg.c_str(), // ✅ fake_lib -> /lib
                 (char*)"-w", (char*)"/",
                 (char*)box64, 
                 (char*)wine,
