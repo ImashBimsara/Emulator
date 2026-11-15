@@ -156,7 +156,8 @@ class MainActivity : AppCompatActivity() {
                 Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
                 val rootfsDir = File(imagefsDir, "rootfs")
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
-                val box64File = File(rootfsDir, "usr/local/bin/box64")
+                // ✅ path එක usr/bin/box64 ලෙස වෙනස් කළා
+                val box64File = File(rootfsDir, "usr/bin/box64")
                 
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibFile = File(nativeLibDir, "libproot.so")
@@ -214,7 +215,8 @@ class MainActivity : AppCompatActivity() {
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
        
-                val box64InternalPath = "/usr/local/bin/box64" 
+                // ✅ path එක /usr/bin/box64 ලෙස වෙනස් කළා
+                val box64InternalPath = "/usr/bin/box64" 
                 val wineInternalPath = "/opt/wine/bin/wine"
                 val installerInternalPath = "/home/xuser/installer.exe"
                 val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
@@ -226,7 +228,7 @@ class MainActivity : AppCompatActivity() {
 
                 // ========== DIAGNOSTIC LOGS ==========
                 Logger.log(this, "=== DIAGNOSTIC: Box64 File Info ===")
-                val box64FullPath = File(rootfsDir, "usr/local/bin/box64")
+                val box64FullPath = File(rootfsDir, "usr/bin/box64")
                 Logger.log(this, "Box64 path: ${box64FullPath.absolutePath}")
                 Logger.log(this, "Box64 exists: ${box64FullPath.exists()}")
                 Logger.log(this, "Box64 size: ${box64FullPath.length()} bytes")
@@ -245,28 +247,14 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                val usrLocalBinDir = File(rootfsDir, "usr/local/bin")
-                Logger.log(this, "usr/local/bin exists: ${usrLocalBinDir.exists()}")
-                if (usrLocalBinDir.exists()) {
-                    usrLocalBinDir.listFiles()?.forEach { file ->
-                        Logger.log(this, "  Found in usr/local/bin: ${file.name} (${file.length()} bytes)")
+                val usrBinDir = File(rootfsDir, "usr/bin")
+                Logger.log(this, "usr/bin exists: ${usrBinDir.exists()}")
+                if (usrBinDir.exists()) {
+                    usrBinDir.listFiles()?.forEach { file ->
+                        Logger.log(this, "  Found in usr/bin: ${file.name} (${file.length()} bytes)")
                     }
                 }
 
-                val usrLocalLibDir = File(rootfsDir, "usr/local/lib")
-                Logger.log(this, "usr/local/lib exists: ${usrLocalLibDir.exists()}")
-                if (usrLocalLibDir.exists()) {
-                    usrLocalLibDir.listFiles()?.take(20)?.forEach { file ->
-                        Logger.log(this, "  Lib in usr/local/lib: ${file.name}")
-                    }
-                }
-
-                val linker64 = File("/apex/com.android.runtime/bin/linker64")
-                Logger.log(this, "Host linker64 exists: ${linker64.exists()}")
-                
-                val ldLinuxGuest = File(rootfsDir, "lib/ld-linux-aarch64.so.1")
-                Logger.log(this, "Guest lib/ld-linux-aarch64.so.1 exists: ${ldLinuxGuest.exists()}")
-                
                 val systemBinLinker = File(rootfsDir, "system/bin/linker64")
                 Logger.log(this, "Guest system/bin/linker64 exists: ${systemBinLinker.exists()}")
                 // =====================================
