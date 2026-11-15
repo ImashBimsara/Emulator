@@ -59,6 +59,25 @@ object AssetExtractor {
                 Logger.log(context, "✅ Created /root directory")
             }
             
+            // ✅ box64 එකට execute permission එක දෙන්න (usr/local/bin/box64)
+            val box64LocalFile = File(destDir, "rootfs/usr/local/bin/box64")
+            if (box64LocalFile.exists()) {
+                box64LocalFile.setExecutable(true)
+                try {
+                    val chmodProcess = ProcessBuilder("chmod", "755", box64LocalFile.absolutePath)
+                        .redirectErrorStream(true)
+                        .start()
+                    val exitCode = chmodProcess.waitFor()
+                    if (exitCode == 0) {
+                        Logger.log(context, "✅ Box64 chmod 755 successful at usr/local/bin")
+                    } else {
+                        Logger.log(context, "❌ Box64 chmod failed at usr/local/bin with code: $exitCode")
+                    }
+                } catch (e: Exception) {
+                    Logger.log(context, "❌ Error running chmod for box64 at usr/local/bin: ${e.message}")
+                }
+            }
+
             // ✅ box64 එකට execute permission එක දෙන්න (usr/bin/box64)
             val box64File = File(usrBinDir, "box64")
             if (box64File.exists()) {
@@ -69,14 +88,13 @@ object AssetExtractor {
                         .start()
                     val exitCode = chmodProcess.waitFor()
                     if (exitCode == 0) {
-                        Logger.log(context, "✅ Box64 chmod 755 successful")
+                        Logger.log(context, "✅ Box64 chmod 755 successful at usr/bin")
                     } else {
-                        Logger.log(context, "❌ Box64 chmod failed with code: $exitCode")
+                        Logger.log(context, "❌ Box64 chmod failed at usr/bin with code: $exitCode")
                     }
                 } catch (e: Exception) {
-                    Logger.log(context, "❌ Error running chmod for box64: ${e.message}")
+                    Logger.log(context, "❌ Error running chmod for box64 at usr/bin: ${e.message}")
                 }
-                Logger.log(context, "✅ Box64 executable permission set")
             }
             
             box64TempDir.deleteRecursively()
