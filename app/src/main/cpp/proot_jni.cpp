@@ -184,7 +184,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         if (setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1) != 0) {
             dprintf(
-                    STDERR_FILeno,
+                    STDERR_FILENO,
                     "Failed to set LD_LIBRARY_PATH: %s\n",
                     strerror(errno)
             );
