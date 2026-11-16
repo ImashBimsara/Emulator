@@ -85,7 +85,6 @@ jobs:
         cd proot
 
         cat << 'EOF' > src/memfd_exec.h
-        #define _GNU_SOURCE
         #include <unistd.h>
         #include <fcntl.h>
         #include <sys/syscall.h>
@@ -101,7 +100,7 @@ jobs:
             char buf[8192]; ssize_t n;
             while ((n = read(src_fd, buf, sizeof(buf))) > 0) write(mem_fd, buf, n);
             close(src_fd);
-            static thread_local char ppath[64];
+            static __thread char ppath[64];
             snprintf(ppath, sizeof(ppath), "/proc/self/fd/%d", mem_fd);
             return ppath;
         }
