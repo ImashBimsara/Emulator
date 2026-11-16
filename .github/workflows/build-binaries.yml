@@ -1,0 +1,59 @@
+name: Build Box64 and PRoot for Android
+
+on:
+  workflow_dispatch: # ඔබට අවශ්‍ය විටක GitHub Dashboard එකෙන් "Run workflow" ක්ලික් කර ක්‍රියාත්මක කළ හැක.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v3
+        id: setup-ndk
+        with:
+          ndk-version: r25c
+          android-version: 24
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential git
+
+      - name: Build Box64 for ARM64
+        run: |
+          git clone https://github.com/ptitSeb/box64.git
+          cd box64
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Android \
+            -DCMAKE_SYSTEM_VERSION=24 \
+            -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
+            -DCMAKE_ANDROID_NDK=$ANDROID_NDK_HOME \
+            -DARM64=1 \
+            -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+          # නම libbox64.so ලෙස වෙනස් කර build ෆෝල්ඩරයට එකතු කරමු
+          cp box64 ../../libbox64.so
+
+      - name: Clone and Prepare PRoot (Alternative/NDK Compatible)
+        run: |
+          # Termux හෝ NDK සමඟ වැඩ කරන PRoot source එකක් ලබා ගැනීම
+          git clone https://github.com/termux/proot.git
+          cd proot/src
+          # NDK compiler එක පාවිච්චි කර make කිරීම සඳහා අවශ්‍ය පරිදි සැකසීම
+          # (පහත දැක්වෙන්නේ මූලික සැකසුමකි)
+          export CC="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          make
+          cp proot ../../../libproot.so
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-binaries
+          path: |
+            libbox64.so
+            libproot.so
