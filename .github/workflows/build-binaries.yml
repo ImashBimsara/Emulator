@@ -11,12 +11,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v3
-        id: setup-ndk
-        with:
-          ndk-version: r25c
-          android-version: 24
+      - name: Download and Setup Android NDK
+        run: |
+          echo "Downloading Android NDK r25c..."
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          echo "Extracting NDK..."
+          unzip -q android-ndk-r25c-linux.zip
+          echo "ANDROID_NDK_HOME=$PWD/android-ndk-r25c" >> $GITHUB_ENV
+          echo "NDK=$PWD/android-ndk-r25c" >> $GITHUB_ENV
 
       - name: Install Build Dependencies
         run: |
@@ -36,18 +38,17 @@ jobs:
             -DARM64=1 \
             -DCMAKE_BUILD_TYPE=Release
           make -j$(nproc)
-          # නම libbox64.so ලෙස වෙනස් කර build ෆෝල්ඩරයට එකතු කරමු
+          # නම libbox64.so ලෙස වෙනස් කර root ෆෝල්ඩරයට එකතු කරමු
           cp box64 ../../libbox64.so
 
-      - name: Clone and Prepare PRoot (Alternative/NDK Compatible)
+      - name: Build PRoot for Android (Termux NDK Source)
         run: |
-          # Termux හෝ NDK සමඟ වැඩ කරන PRoot source එකක් ලබා ගැනීම
           git clone https://github.com/termux/proot.git
           cd proot/src
-          # NDK compiler එක පාවිච්චි කර make කිරීම සඳහා අවශ්‍ය පරිදි සැකසීම
-          # (පහත දැක්වෙන්නේ මූලික සැකසුමකි)
-          export CC="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-          make
+          # Android NDK Clang compiler එක සහ sysroot හරහා නිවැරදිව compile කිරීම
+          export CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          export LDFLAGS="-pie -fPIE"
+          make -j$(nproc)
           cp proot ../../../libproot.so
 
       - name: Upload Artifacts
