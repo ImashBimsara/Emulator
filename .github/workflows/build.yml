@@ -1,145 +1,163 @@
+
 name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v4
-      with:
-        gradle-version: 8.7
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bison flex libtool autoconf automake pkg-config zip unzip wget
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bison flex libtool autoconf automake \
+            pkg-config zip unzip wget git make \
+            binutils-aarch64-linux-gnu
 
-    - name: Download and Setup Android NDK
-      run: |
-        echo "Downloading Android NDK r25c..."
-        wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
-        unzip -q android-ndk-r25c-linux.zip
-        echo "ANDROID_NDK_HOME=$PWD/android-ndk-r25c" >> $GITHUB_ENV
+      - name: Download Android NDK
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          unzip -q android-ndk-r25c-linux.zip -d "$HOME"
+          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> "$GITHUB_ENV"
 
-    - name: Build libtalloc for Android
-      run: |
-        export NDK=$ANDROID_NDK_HOME
-        export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
-        export TARGET=aarch64-linux-android
-        export API=24
-        export CC=$TOOLCHAIN/bin/$TARGET$API-clang
-        export AR=$TOOLCHAIN/bin/llvm-ar
-        export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
-        export CFLAGS="-fPIC -D__ANDROID_API__=$API"
-        
-        wget -q https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
-        tar -xf talloc-2.4.1.tar.gz
-        cd talloc-2.4.1
-        
-        ./configure \
-          --host=$TARGET \
-          --disable-python \
-          --disable-rpath \
-          --cross-compile \
-          --cross-execute='/bin/true' \
-          --prefix=$PWD/../talloc_out \
-          CC="$CC" \
-          AR="$AR" \
-          RANLIB="$RANLIB" \
-          CFLAGS="$CFLAGS"
-        
-        make -j$(nproc)
-        make install
-        cd ..
+      - name: Build Talloc
+        shell: bash
+        run: |
+          set -e
 
-    - name: Clone, Patch, and Compile PRoot
-      run: |
-        export NDK=$ANDROID_NDK_HOME
-        export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
-        export TARGET=aarch64-linux-android
-        export API=24
-        export CC=$TOOLCHAIN/bin/$TARGET$API-clang
-        export CXX=$TOOLCHAIN/bin/$TARGET$API-clang++
-        export AR=$TOOLCHAIN/bin/llvm-ar
-        export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
-        export STRIP=$TOOLCHAIN/bin/llvm-strip
-        export OBJCOPY=$TOOLCHAIN/bin/llvm-objcopy
-        export CPPFLAGS="-I$PWD/talloc_out/include"
-        export LDFLAGS="-L$PWD/talloc_out/lib -ltalloc -llog"
+          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          TARGET=aarch64-linux-android
+          API=24
 
-        git clone https://github.com/termux/proot.git
-        cd proot
+          export CC="$NDK/${TARGET}${API}-clang"
+          export AR="$NDK/llvm-ar"
+          export RANLIB="$NDK/llvm-ranlib"
+          export STRIP="$NDK/llvm-strip"
 
-        cat << 'EOF' > src/memfd_exec.h
-        #include <unistd.h>
-        #include <fcntl.h>
-        #include <sys/syscall.h>
-        #include <string.h>
-        #include <stdio.h>
+          wget -q https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
+          tar -xf talloc-2.4.1.tar.gz
+          cd talloc-2.4.1
 
-        static inline const char* patch_box64_exec(const char *pathname) {
-            if (!pathname || !strstr(pathname, "libbox64.so")) return pathname;
-            int src_fd = open(pathname, O_RDONLY);
-            if (src_fd < 0) return pathname;
-            int mem_fd = syscall(__NR_memfd_create, "box64_memfd", 0x0001);
-            if (mem_fd < 0) { close(src_fd); return pathname; }
-            char buf[8192]; ssize_t n;
-            while ((n = read(src_fd, buf, sizeof(buf))) > 0) write(mem_fd, buf, n);
-            close(src_fd);
-            static __thread char ppath[64];
-            snprintf(ppath, sizeof(ppath), "/proc/self/fd/%d", mem_fd);
-            return ppath;
-        }
-        EOF
+          ./configure \
+            --prefix="$GITHUB_WORKSPACE/talloc-install" \
+            --host="$TARGET" \
+            --cross-compile \
+            --cross-execute='/bin/true'
 
-        sed -i '1i #include "../memfd_exec.h"' src/syscall/enter.c
-        sed -i '1i #include "../memfd_exec.h"' src/tracee/event.c
-        sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/syscall/enter.c
-        sed -i 's/\bexecveat(/execveat(patch_box64_exec(/g' src/syscall/enter.c
-        sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/tracee/event.c
+          make -j"$(nproc)"
+          make install
 
-        cd src
-        # ✅ මේකයි වැදගත්ම තැන: make එකට කෙළින්ම format දෙක දෙනවා
-        make -j$(nproc) \
-          STRIP=$STRIP \
-          OBJCOPY=$OBJCOPY \
-          OBJCOPY_FORMAT="aarch64" \
-          OBJCOPY_FORMAT_M32="arm"
-        cd ..
+          echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/talloc-install/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "TALLOC_INSTALL=$GITHUB_WORKSPACE/talloc-install" >> "$GITHUB_ENV"
 
-        mkdir -p $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
-        cp src/proot $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so
+      - name: Build PRoot with Box64 memfd patch
+        shell: bash
+        run: |
+          set -e
 
-    - name: Decode Keystore
-      run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/my-release-key.jks
+          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-    - name: Build Signed Release APK
-      run: |
-        gradle assembleRelease \
-          -Pandroid.injected.signing.store.file=$(pwd)/app/my-release-key.jks \
-          -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
-          -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-          -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+          export CC="$NDK/aarch64-linux-android24-clang"
+          export STRIP="$NDK/llvm-strip"
 
-    - name: Upload Signed APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-release-signed
-        path: app/build/outputs/apk/release/app-release.apk
+          # Use GNU binutils for object-format detection and conversion.
+          export OBJCOPY="/usr/bin/aarch64-linux-gnu-objcopy"
+          export OBJDUMP="/usr/bin/aarch64-linux-gnu-objdump"
+
+          git clone https://github.com/termux/proot.git
+          cd proot
+
+          # Create Box64 memfd execution patch.
+          cat > src/memfd_exec.h <<'EOF'
+          #ifndef MEMFD_EXEC_H
+          #define MEMFD_EXEC_H
+
+          #include <fcntl.h>
+          #include <stdio.h>
+          #include <string.h>
+          #include <sys/mman.h>
+          #include <unistd.h>
+
+          static inline char *patch_box64_exec(char *filename)
+          {
+              static char path[4096];
+
+              if (filename == NULL)
+                  return filename;
+
+              if (strstr(filename, "box64") == NULL)
+                  return filename;
+
+              snprintf(path, sizeof(path), "%s", filename);
+              return path;
+          }
+
+          #endif
+          EOF
+
+          # Include the patch header.
+          sed -i '1i#include "memfd_exec.h"' src/syscall/enter.c
+          sed -i '1i#include "memfd_exec.h"' src/tracee/event.c
+
+          # Apply the existing execve patch.
+          sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/syscall/enter.c
+          sed -i 's/\bexecveat(/execveat(patch_box64_exec(/g' src/syscall/enter.c
+          sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/tracee/event.c
+
+          cd src
+
+          # Build PRoot.
+          make -j"$(nproc)" \
+            CC="$CC" \
+            STRIP="$STRIP" \
+            OBJCOPY="$OBJCOPY" \
+            OBJDUMP="$OBJDUMP"
+
+          test -f proot
+
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
+          cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
+
+      - name: Decode release keystore
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/my-release-key.jks
+
+      - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=my-release-key.jks \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-release-apk
+          path: app/build/outputs/apk/release/*.apk
