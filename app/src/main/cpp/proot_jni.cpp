@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <sys/mman.h>
 
 #define LOG_TAG "ProotJNI"
 
@@ -17,44 +18,51 @@
 #define LOGE(...) \
     __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Helper function to copy file and make it executable
-bool copyAndMakeExecutable(const char* srcPath, const char* destPath) {
+// Helper to load Box64 into anonymous memory (memfd) to bypass Android noexec restrictions
+std::string createMemfdBox64(const char* srcPath) {
     int srcFd = open(srcPath, O_RDONLY);
     if (srcFd < 0) {
-        LOGE("Failed to open source file %s: %s", srcPath, strerror(errno));
-        return false;
+        LOGE("Failed to open source Box64 %s: %s", srcPath, strerror(errno));
+        return "";
     }
 
-    int destFd = open(destPath, O_WRONLY | O_CREAT | O_TRUNC, 0755);
-    if (destFd < 0) {
-        LOGE("Failed to open destination file %s: %s", destPath, strerror(errno));
+    struct stat st;
+    if (fstat(srcFd, &st) < 0) {
+        LOGE("Failed to fstat Box64: %s", strerror(errno));
         close(srcFd);
-        return false;
+        return "";
     }
 
+    // Create memfd
+    int memfd = memfd_create("box64_mem", MFD_ALLOW_SEALING);
+    if (memfd < 0) {
+        LOGE("memfd_create failed: %s", strerror(errno));
+        close(srcFd);
+        return "";
+    }
+
+    // Copy binary content into memfd
     char buffer[8192];
     ssize_t bytesRead;
     while ((bytesRead = read(srcFd, buffer, sizeof(buffer))) > 0) {
-        ssize_t bytesWritten = write(destFd, buffer, bytesRead);
-        if (bytesWritten != bytesRead) {
-            LOGE("Failed to write destination file %s: %s", destPath, strerror(errno));
+        ssize_t written = write(memfd, buffer, bytesRead);
+        if (written != bytesRead) {
+            LOGE("Failed to write into memfd: %s", strerror(errno));
             close(srcFd);
-            close(destFd);
-            return false;
+            close(memfd);
+            return "";
         }
     }
 
     close(srcFd);
-    close(destFd);
 
-    // Ensure executable permissions (+x)
-    if (chmod(destPath, 0755) != 0) {
-        LOGE("Failed to chmod +x on %s: %s", destPath, strerror(errno));
-        return false;
-    }
-
-    LOGI("Successfully copied and made executable: %s -> %s", srcPath, destPath);
-    return true;
+    // Return the /proc/self/fd path for the memfd
+    char fdPath[64];
+    snprintf(fdPath, sizeof(fdPath), "/proc/self/fd/%d", memfd);
+    LOGI("Box64 successfully loaded into memfd at %s", fdPath);
+    
+    // Note: We leave `memfd` open so the child process can execute it via the fd path.
+    return std::string(fdPath);
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -103,10 +111,10 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         return -1;
     }
 
-    // Prepare executable Box64 path inside filesDir to bypass noexec restriction
-    std::string box64Dest = std::string(filesDir) + "/box64";
-    if (!copyAndMakeExecutable(box64Src, box64Dest.c_str())) {
-        LOGE("Failed to prepare executable Box64 in filesDir");
+    // Load Box64 into anonymous memory via memfd to completely bypass noexec restriction
+    std::string box64MemPath = createMemfdBox64(box64Src);
+    if (box64MemPath.empty()) {
+        LOGE("Failed to create memfd for Box64");
         releaseStrings();
         return -4;
     }
@@ -160,18 +168,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             _exit(20);
         }
 
-        // Verify copied Box64 executable
-        struct stat st;
-        if (stat(box64Dest.c_str(), &st) != 0) {
-            dprintf(
-                    STDERR_FILENO,
-                    "Box64 executable not found in filesDir: %s\n",
-                    strerror(errno)
-            );
-            _exit(10);
-        }
-
         // Verify Proot
+        struct stat st;
         if (stat(proot, &st) != 0) {
             dprintf(
                     STDERR_FILENO,
@@ -194,12 +192,12 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             _exit(13);
         }
 
-        dprintf(STDERR_FILENO, "Starting Proot with executable Box64...\n");
+        dprintf(STDERR_FILENO, "Starting Proot with memfd Box64...\n");
         dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
-        dprintf(STDERR_FILENO, "Box64 (Exec): %s\n", box64Dest.c_str());
+        dprintf(STDERR_FILENO, "Box64 (memfd): %s\n", box64MemPath.c_str());
         dprintf(STDERR_FILENO, "Wine: %s\n", wine);
 
-        // Proot arguments using the executable copy in filesDir
+        // Proot arguments using the memfd path for Box64
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
@@ -222,8 +220,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"/data",
                 (char*)"-w",
                 (char*)"/",
-                // Box64 and Wine (using box64Dest instead of raw jniLibs path)
-                (char*)box64Dest.c_str(),
+                // Box64 via memfd path and Wine
+                (char*)box64MemPath.c_str(),
                 (char*)wine,
                 (char*)installer,
                 nullptr
