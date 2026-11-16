@@ -86,7 +86,9 @@ jobs:
         git clone https://github.com/termux/proot.git
         cd proot
 
-        # ✅ GNUmakefile එකේ objcopy output targets නිවැරදි කිරීම
+        # ✅ GNUmakefile එකේ objcopy flags නිවැරදි කිරීම
+        sed -i 's/--input /--input-target /g' src/GNUmakefile
+        sed -i 's/--output /--output-target /g' src/GNUmakefile
         sed -i 's/elf64-little/elf64-littleaarch64/g' src/GNUmakefile
         sed -i 's/elf32-little/elf32-littlearm/g' src/GNUmakefile
 
