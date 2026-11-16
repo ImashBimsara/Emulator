@@ -86,23 +86,6 @@ jobs:
         git clone https://github.com/termux/proot.git
         cd proot
 
-        # ✅ 1. හැම Makefile එකක්ම හොයලා patch කරනවා
-        echo "=== Patching all Makefiles ==="
-        find . -type f \( -name "GNUmakefile" -o -name "Makefile" -o -name "makefile" \) | while read f; do
-            if grep -q "elf64-little\|elf32-little" "$f"; then
-                echo "Patching: $f"
-                sed -i 's/elf64-little/aarch64/g' "$f"
-                sed -i 's/elf32-little/arm/g' "$f"
-                sed -i 's/--input /--input-target /g' "$f"
-                sed -i 's/--output /--output-target /g' "$f"
-            fi
-        done
-
-        # ✅ 2. Patch එක හරිද කියලා චෙක් කරනවා
-        echo "=== Verifying patch ==="
-        grep -rn "elf64-little\b" . || echo "✅ No more 'elf64-little' found!"
-
-        # ✅ 3. memfd patch එක
         cat << 'EOF' > src/memfd_exec.h
         #include <unistd.h>
         #include <fcntl.h>
@@ -131,9 +114,13 @@ jobs:
         sed -i 's/\bexecveat(/execveat(patch_box64_exec(/g' src/syscall/enter.c
         sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/tracee/event.c
 
-        # ✅ 4. Compile කරනවා
         cd src
-        make -j$(nproc) STRIP=$STRIP OBJCOPY=$OBJCOPY
+        # ✅ මේකයි වැදගත්ම තැන: make එකට කෙළින්ම format දෙක දෙනවා
+        make -j$(nproc) \
+          STRIP=$STRIP \
+          OBJCOPY=$OBJCOPY \
+          OBJCOPY_FORMAT="aarch64" \
+          OBJCOPY_FORMAT_M32="arm"
         cd ..
 
         mkdir -p $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
