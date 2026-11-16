@@ -79,6 +79,7 @@ jobs:
         export AR=$TOOLCHAIN/bin/llvm-ar
         export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
         export STRIP=$TOOLCHAIN/bin/llvm-strip
+        export OBJCOPY=$TOOLCHAIN/bin/llvm-objcopy
         export CPPFLAGS="-I$PWD/talloc_out/include"
         export LDFLAGS="-L$PWD/talloc_out/lib -ltalloc -llog"
 
@@ -114,7 +115,7 @@ jobs:
         sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/tracee/event.c
 
         cd src
-        make -j$(nproc) STRIP=$STRIP
+        make -j$(nproc) STRIP=$STRIP OBJCOPY=$OBJCOPY
         cd ..
 
         mkdir -p $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
