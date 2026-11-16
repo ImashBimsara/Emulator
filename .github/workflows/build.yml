@@ -68,56 +68,57 @@ jobs:
         make install
         cd ..
 
-    - name: Clone, Patch, and Compile PRoot
-      run: |
-        export NDK=$ANDROID_NDK_HOME
-        export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
-        export TARGET=aarch64-linux-android
-        export API=24
-        export CC=$TOOLCHAIN/bin/$TARGET$API-clang
-        export CXX=$TOOLCHAIN/bin/$TARGET$API-clang++
-        export AR=$TOOLCHAIN/bin/llvm-ar
-        export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
-        export CPPFLAGS="-I$PWD/talloc_out/include"
-        export LDFLAGS="-L$PWD/talloc_out/lib -ltalloc -llog"
-
-        git clone https://github.com/termux/proot.git
-        cd proot
-
-        cat << 'EOF' > src/memfd_exec.h
-        #include <unistd.h>
-        #include <fcntl.h>
-        #include <sys/syscall.h>
-        #include <string.h>
-        #include <stdio.h>
-
-        static inline const char* patch_box64_exec(const char *pathname) {
-            if (!pathname || !strstr(pathname, "libbox64.so")) return pathname;
-            int src_fd = open(pathname, O_RDONLY);
-            if (src_fd < 0) return pathname;
-            int mem_fd = syscall(__NR_memfd_create, "box64_memfd", 0x0001);
-            if (mem_fd < 0) { close(src_fd); return pathname; }
-            char buf[8192]; ssize_t n;
-            while ((n = read(src_fd, buf, sizeof(buf))) > 0) write(mem_fd, buf, n);
-            close(src_fd);
-            static __thread char ppath[64];
-            snprintf(ppath, sizeof(ppath), "/proc/self/fd/%d", mem_fd);
-            return ppath;
-        }
-        EOF
-
-        sed -i '1i #include "../memfd_exec.h"' src/syscall/enter.c
-        sed -i '1i #include "../memfd_exec.h"' src/tracee/event.c
-        sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/syscall/enter.c
-        sed -i 's/\bexecveat(/execveat(patch_box64_exec(/g' src/syscall/enter.c
-        sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/tracee/event.c
-
-        cd src
-        make -j$(nproc)
-        cd ..
-
-        mkdir -p $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
-        cp src/proot $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so
+        - name: Clone, Patch, and Compile PRoot
+          run: |
+            export NDK=$ANDROID_NDK_HOME
+            export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+            export TARGET=aarch64-linux-android
+            export API=24
+            export CC=$TOOLCHAIN/bin/$TARGET$API-clang
+            export CXX=$TOOLCHAIN/bin/$TARGET$API-clang++
+            export AR=$TOOLCHAIN/bin/llvm-ar
+            export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
+            export STRIP=$TOOLCHAIN/bin/llvm-strip
+            export CPPFLAGS="-I$PWD/talloc_out/include"
+            export LDFLAGS="-L$PWD/talloc_out/lib -ltalloc -llog"
+    
+            git clone https://github.com/termux/proot.git
+            cd proot
+    
+            cat << 'EOF' > src/memfd_exec.h
+            #include <unistd.h>
+            #include <fcntl.h>
+            #include <sys/syscall.h>
+            #include <string.h>
+            #include <stdio.h>
+    
+            static inline const char* patch_box64_exec(const char *pathname) {
+                if (!pathname || !strstr(pathname, "libbox64.so")) return pathname;
+                int src_fd = open(pathname, O_RDONLY);
+                if (src_fd < 0) return pathname;
+                int mem_fd = syscall(__NR_memfd_create, "box64_memfd", 0x0001);
+                if (mem_fd < 0) { close(src_fd); return pathname; }
+                char buf[8192]; ssize_t n;
+                while ((n = read(src_fd, buf, sizeof(buf))) > 0) write(mem_fd, buf, n);
+                close(src_fd);
+                static __thread char ppath[64];
+                snprintf(ppath, sizeof(ppath), "/proc/self/fd/%d", mem_fd);
+                return ppath;
+            }
+            EOF
+    
+            sed -i '1i #include "../memfd_exec.h"' src/syscall/enter.c
+            sed -i '1i #include "../memfd_exec.h"' src/tracee/event.c
+            sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/syscall/enter.c
+            sed -i 's/\bexecveat(/execveat(patch_box64_exec(/g' src/syscall/enter.c
+            sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/tracee/event.c
+    
+            cd src
+            make -j$(nproc) STRIP=$STRIP
+            cd ..
+    
+            mkdir -p $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
+            cp src/proot $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so
 
     - name: Decode Keystore
       run: |
