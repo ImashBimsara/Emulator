@@ -33,38 +33,10 @@ object AssetExtractor {
             Logger.log(context, "Extracting rootfs_patches.tzst...")
             extractTzst(context, "rootfs_patches.tzst", File(destDir, "rootfs_patches"))
     
-            // ✅ 3. box64 එක .tzst එකෙන් extract කරන්න
-            Logger.log(context, "Extracting box64.tzst...")
-            val box64TempDir = File(destDir, "box64_temp")
-            box64TempDir.mkdirs()
-            extractTzst(context, "box64.tzst", box64TempDir)
-            
-            // box64 එක usr/bin එකට copy කරන්න
-            val box64Source = File(box64TempDir, "box64")
+            // ✅ 3. /usr/bin ෆෝල්ඩර් එක හදන්න (box64 එක proot එකෙන් bind වෙනවා)
             val usrBinDir = File(destDir, "rootfs/usr/bin")
             usrBinDir.mkdirs()
-            
-            if (box64Source.exists()) {
-                box64Source.copyTo(File(usrBinDir, "box64"), overwrite = true)
-                Logger.log(context, "✅ Box64 copied to /usr/bin")
-                
-                // ✅ box64 එකට execute permission එක දෙන්න
-                val box64File = File(usrBinDir, "box64")
-                box64File.setExecutable(true)
-                try {
-                    val chmodProcess = ProcessBuilder("chmod", "755", box64File.absolutePath)
-                        .redirectErrorStream(true)
-                        .start()
-                    chmodProcess.waitFor()
-                    Logger.log(context, "✅ Box64 chmod 755 successful")
-                } catch (e: Exception) {
-                    Logger.log(context, "❌ Error chmod box64: ${e.message}")
-                }
-            } else {
-                Logger.log(context, "❌ box64 not found in extracted tzst!")
-            }
-            
-            box64TempDir.deleteRecursively()
+            Logger.log(context, "✅ Created /usr/bin directory")
             
             // ✅ /root ෆෝල්ඩර් එක හදන්න
             val rootDir = File(destDir, "rootfs/root")
@@ -87,7 +59,7 @@ object AssetExtractor {
                 Logger.log(context, "✅ Copied ld-linux-aarch64.so.1 to /lib")
             }
 
-            // ✅ Android Linker එක rootfs එකට copy කරන්න (box64 එකට ඕනේ)
+            // ✅ Android Linker එක rootfs එකට copy කරන්න
             val systemBinDir = File(destDir, "rootfs/system/bin")
             systemBinDir.mkdirs()
             val hostLinker = File("/system/bin/linker64")
