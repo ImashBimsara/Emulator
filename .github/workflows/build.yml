@@ -25,12 +25,101 @@ jobs:
       with:
         gradle-version: 8.7
 
-    # 1. GitHub Secrets වල තියෙන Keystore එක decode කරලා file එකක් විදිහට හදනවා
+    # ==========================================
+    # ✅ අලුතෙන් එකතු කරපු PRoot Patch & Compile Step එක
+    # ==========================================
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bison flex libtool autoconf automake pkg-config zip unzip wget
+
+    - name: Download and Setup Android NDK
+      run: |
+        echo "Downloading Android NDK r25c..."
+        wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+        unzip -q android-ndk-r25c-linux.zip
+        echo "ANDROID_NDK_HOME=$PWD/android-ndk-r25c" >> $GITHUB_ENV
+
+    - name: Build libtalloc for Android
+      run: |
+        export NDK=$ANDROID_NDK_HOME
+        export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+        export TARGET=aarch64-linux-android
+        export API=24
+        export CC=$TOOLCHAIN/bin/$TARGET$API-clang
+        export CXX=$TOOLCHAIN/bin/$TARGET$API-clang++
+        export AR=$TOOLCHAIN/bin/llvm-ar
+        export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
+        
+        wget https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
+        tar -xf talloc-2.4.1.tar.gz
+        cd talloc-2.4.1
+        ./configure --host=$TARGET --disable-python --prefix=$PWD/../talloc_out
+        make -j$(nproc)
+        make install
+        cd ..
+
+    - name: Clone, Patch, and Compile PRoot
+      run: |
+        export NDK=$ANDROID_NDK_HOME
+        export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+        export TARGET=aarch64-linux-android
+        export API=24
+        export CC=$TOOLCHAIN/bin/$TARGET$API-clang
+        export CXX=$TOOLCHAIN/bin/$TARGET$API-clang++
+        export AR=$TOOLCHAIN/bin/llvm-ar
+        export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
+        export CPPFLAGS="-I$PWD/talloc_out/include"
+        export LDFLAGS="-L$PWD/talloc_out/lib -llog"
+
+        git clone https://github.com/termux/proot.git
+        cd proot
+
+        # 1. memfd patch එක හදනවා
+        cat << 'EOF' > src/syscall/memfd_exec.h
+        #define _GNU_SOURCE
+        #include <unistd.h>
+        #include <fcntl.h>
+        #include <sys/syscall.h>
+        #include <string.h>
+        #include <stdio.h>
+
+        static inline const char* patch_box64_exec(const char *pathname) {
+            if (!pathname || !strstr(pathname, "libbox64.so")) return pathname;
+            int src_fd = open(pathname, O_RDONLY);
+            if (src_fd < 0) return pathname;
+            int mem_fd = syscall(__NR_memfd_create, "box64_memfd", 0x0001);
+            if (mem_fd < 0) { close(src_fd); return pathname; }
+            char buf[8192]; ssize_t n;
+            while ((n = read(src_fd, buf, sizeof(buf))) > 0) write(mem_fd, buf, n);
+            close(src_fd);
+            static thread_local char ppath[64];
+            snprintf(ppath, sizeof(ppath), "/proc/self/fd/%d", mem_fd);
+            return ppath;
+        }
+        EOF
+
+        # 2. PRoot එකේ execve කෝල් කරන තැන් patch කරනවා
+        sed -i 's/#include "syscall\/syscall.h"/#include "syscall\/syscall.h"\n#include "memfd_exec.h"/' src/syscall/enter.c
+        sed -i 's/execve(/execve(patch_box64_exec(/g' src/syscall/enter.c
+        sed -i 's/execveat(/execveat(patch_box64_exec(/g' src/syscall/enter.c
+        
+        sed -i 's/#include "tracee\/tracee.h"/#include "tracee\/tracee.h"\n#include "syscall\/memfd_exec.h"/' src/tracee/event.c
+        sed -i 's/execve(/execve(patch_box64_exec(/g' src/tracee/event.c
+
+        # 3. Configure සහ Compile කරනවා
+        ./configure --host=$TARGET --prefix=$PWD/../proot_out --disable-dependency-tracking
+        make -j$(nproc)
+        
+        # 4. හදපු proot එක jniLibs එකට libproot.so විදිහට දානවා
+        mkdir -p ../app/src/main/jniLibs/arm64-v8a/
+        cp src/proot ../app/src/main/jniLibs/arm64-v8a/libproot.so
+    # ==========================================
+
     - name: Decode Keystore
       run: |
         echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/my-release-key.jks
 
-    # 2. Release APK එක හදනවා. ඒක sign වෙන්න අවශ්‍ය විස්තර Secrets වලින් ගන්නවා
     - name: Build Signed Release APK
       run: |
         gradle assembleRelease \
@@ -39,7 +128,6 @@ jobs:
           -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
           -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
 
-    # 3. හදපු Signed APK එක Upload කරනවා
     - name: Upload Signed APK Artifact
       uses: actions/upload-artifact@v4
       with:
