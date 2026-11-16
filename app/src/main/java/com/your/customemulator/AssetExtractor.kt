@@ -8,6 +8,7 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import android.system.Os
 
 object AssetExtractor {
     private const val TAG = "AssetExtractor"
@@ -127,43 +128,137 @@ object AssetExtractor {
         }
     }
 
-    private fun extractTzst(context: Context, assetName: String, destFile: File) {
+    
+    private fun extractTzst(
+        context: Context,
+        assetName: String,
+        destFile: File
+    ) {
         try {
             context.assets.open(assetName).use { inputStream ->
-                BufferedInputStream(inputStream, BUFFER_SIZE).use { bufferedInputStream ->
-                    ZstdCompressorInputStream(bufferedInputStream).use { zstdInputStream ->
-                        TarArchiveInputStream(zstdInputStream).use { tarInputStream ->
-                            var entry = tarInputStream.nextEntry as? TarArchiveEntry
+                BufferedInputStream(inputStream, BUFFER_SIZE).use { buffered ->
+    
+                    ZstdCompressorInputStream(buffered).use { zstd ->
+    
+                        TarArchiveInputStream(zstd).use { tar ->
+    
+                            var entry = tar.nextEntry as? TarArchiveEntry
                             var count = 0
+                            var symlinkCount = 0
+                            var fileCount = 0
+    
+                            val root = destFile.canonicalFile
+    
                             while (entry != null) {
-                                if (!tarInputStream.canReadEntryData(entry)) {
-                                    entry = tarInputStream.nextEntry as? TarArchiveEntry
-                                    continue
+    
+                                // Normalize archive path
+                                val relativePath = entry.name
+                                    .removePrefix("./")
+                                    .trimStart('/')
+    
+                                val outFile = File(root, relativePath)
+                                val canonical = outFile.canonicalFile
+    
+                                // Prevent path traversal
+                                if (canonical != root &&
+                                    !canonical.path.startsWith(root.path + File.separator)
+                                ) {
+                                    throw SecurityException(
+                                        "Invalid archive path: ${entry.name}"
+                                    )
                                 }
-                                val outFile = File(destFile, entry.name)
+    
                                 if (entry.isDirectory) {
+    
                                     outFile.mkdirs()
-                                } else {
+    
+                                } else if (entry.isSymbolicLink) {
+    
                                     outFile.parentFile?.mkdirs()
-                                    BufferedOutputStream(FileOutputStream(outFile), BUFFER_SIZE).use { out ->
+    
+                                    if (outFile.exists() || Os.readlinkOrNull(outFile.absolutePath) != null) {
+                                        outFile.delete()
+                                    }
+    
+                                    Os.symlink(
+                                        entry.linkName,
+                                        outFile.absolutePath
+                                    )
+    
+                                    symlinkCount++
+    
+                                } else if (entry.isLink) {
+    
+                                    throw IllegalStateException(
+                                        "Hard link found: ${entry.name}"
+                                    )
+    
+                                } else {
+    
+                                    if (!tar.canReadEntryData(entry)) {
+                                        throw IllegalStateException(
+                                            "Cannot read: ${entry.name}"
+                                        )
+                                    }
+    
+                                    outFile.parentFile?.mkdirs()
+    
+                                    BufferedOutputStream(
+                                        FileOutputStream(outFile),
+                                        BUFFER_SIZE
+                                    ).use { output ->
+    
                                         val buffer = ByteArray(BUFFER_SIZE)
                                         var len: Int
-                                        while (tarInputStream.read(buffer).also { len = it } > 0) {
-                                            out.write(buffer, 0, len)
+    
+                                        while (
+                                            tar.read(buffer).also { len = it } != -1
+                                        ) {
+                                            output.write(buffer, 0, len)
                                         }
                                     }
+    
+                                    // Preserve archive permissions
+                                    Os.chmod(
+                                        outFile.absolutePath,
+                                        entry.mode and 0xFFF
+                                    )
+    
+                                    fileCount++
                                 }
+    
                                 count++
-                                entry = tarInputStream.nextEntry as? TarArchiveEntry
+                                entry = tar.nextEntry as? TarArchiveEntry
                             }
-                            Logger.log(context, "Successfully extracted $assetName. Total: $count entries")
+    
+                            Logger.log(
+                                context,
+                                "Extracted $assetName: $count entries"
+                            )
+    
+                            Logger.log(
+                                context,
+                                "Regular files: $fileCount"
+                            )
+    
+                            Logger.log(
+                                context,
+                                "Symbolic links: $symlinkCount"
+                            )
                         }
                     }
                 }
             }
+    
         } catch (e: Exception) {
-            Logger.log(context, "Error extracting $assetName: ${e.message}")
-            throw e 
+    
+            Logger.log(
+                context,
+                "Extraction error ($assetName): ${e.message}"
+            )
+    
+            throw e
         }
     }
+
 }
