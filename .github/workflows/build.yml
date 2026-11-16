@@ -25,9 +25,6 @@ jobs:
       with:
         gradle-version: 8.7
 
-    # ==========================================
-    # ✅ PRoot Patch & Compile Step (Fixed)
-    # ==========================================
     - name: Install Dependencies
       run: |
         sudo apt-get update
@@ -40,15 +37,41 @@ jobs:
         unzip -q android-ndk-r25c-linux.zip
         echo "ANDROID_NDK_HOME=$PWD/android-ndk-r25c" >> $GITHUB_ENV
 
-    - name: Get libtalloc from Termux
+    # ✅ 1. libtalloc එක Cross-Compile කරන Step එක (100%ක් නිවැරදි කළා)
+    - name: Build libtalloc for Android
       run: |
-        wget -q https://mirrors.cqupt.edu.cn/termux/termux-main/pool/main/libt/libtalloc/libtalloc_2.4.1_aarch64.deb
-        ar x libtalloc_2.4.1_aarch64.deb
-        tar -xf data.tar.xz
-        mkdir -p talloc_out/lib talloc_out/include
-        cp data/data/com.termux/files/usr/lib/libtalloc.so* talloc_out/lib/
-        cp data/data/com.termux/files/usr/include/talloc.h talloc_out/include
+        export NDK=$ANDROID_NDK_HOME
+        export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+        export TARGET=aarch64-linux-android
+        export API=24
+        export CC=$TOOLCHAIN/bin/$TARGET$API-clang
+        export AR=$TOOLCHAIN/bin/llvm-ar
+        export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
+        export CFLAGS="-fPIC -D__ANDROID_API__=$API"
+        
+        wget -q https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
+        tar -xf talloc-2.4.1.tar.gz
+        cd talloc-2.4.1
+        
+        # ✅ මේකයි වැදගත්ම තැන: --cross-compile සහ --cross-execute එකතු කළා
+        ./configure \
+          --host=$TARGET \
+          --disable-python \
+          --disable-rpath \
+          --cross-compile \
+          --cross-execute='/bin/true' \
+          --prefix=$PWD/../talloc_out \
+          CC="$CC" \
+          AR="$AR" \
+          RANLIB="$RANLIB" \
+          CFLAGS="$CFLAGS"
+        
+        make -j$(nproc)
+        make install
+        cd ..
+        echo "✅ talloc built successfully!"
 
+    # ✅ 2. PRoot එක Patch කරලා Compile කරන Step එක
     - name: Clone, Patch, and Compile PRoot
       run: |
         export NDK=$ANDROID_NDK_HOME
@@ -104,7 +127,6 @@ jobs:
         # 4. හදපු proot එක jniLibs එකට libproot.so විදිහට දානවා
         mkdir -p ../app/src/main/jniLibs/arm64-v8a/
         cp src/proot ../app/src/main/jniLibs/arm64-v8a/libproot.so
-    # ==========================================
 
     - name: Decode Keystore
       run: |
