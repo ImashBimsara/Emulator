@@ -36,6 +36,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* nativeLibDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
     const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
 
+    // ✅ box64 එක nativeLibraryDir එකෙන් /usr/bin/box64 එකට bind කරන්න
+    std::string box64Bind = std::string(box64) + ":/usr/bin/box64";
+
     pid_t pid = fork();
     if (pid == 0) {
         // Child process
@@ -68,8 +71,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"-b", (char*)"/proc",
                 (char*)"-b", (char*)"/sys",
                 (char*)"-b", (char*)"/data",
+                (char*)"-b", (char*)box64Bind.c_str(), // ✅ libbox64.so -> /usr/bin/box64
                 (char*)"-w", (char*)"/",
-                (char*)box64, 
+                (char*)"/usr/bin/box64", // ✅ proot එක ඇතුළේ run කරන්නේ මේක
                 (char*)wine,
                 (char*)installer,
                 nullptr
