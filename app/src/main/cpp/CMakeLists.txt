@@ -5,15 +5,8 @@ project("prootjni")
 add_library(prootjni SHARED
         proot_jni.cpp)
 
-# ✅ අලුතෙන් එකතු කරපු exechook library එක
-add_library(exechook SHARED
-        exec_hook.cpp)
-
 target_link_libraries(prootjni
         android
         log)
 
-# ✅ exechook එකට ඕන libraries
-target_link_libraries(exechook
-        log
-        dl)
+
