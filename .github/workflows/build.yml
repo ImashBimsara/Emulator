@@ -164,3 +164,4 @@ jobs:
         with:
           name: emulator-release-apk
           path: app/build/outputs/apk/release/*.apk
+          retention-days: 3
