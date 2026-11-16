@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 
 #define LOG_TAG "ProotJNI"
 
@@ -17,6 +18,29 @@
 
 #define LOGE(...) \
     __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+// Define __NR_memfd_create if not already defined in Android headers
+#ifndef __NR_memfd_create
+#if defined(__aarch64__)
+#define __NR_memfd_create 279
+#elif defined(__arm__)
+#define __NR_memfd_create 385
+#elif defined(__x86_64__)
+#define __NR_memfd_create 319
+#elif defined(__i386__)
+#define __NR_memfd_create 356
+#endif
+#endif
+
+// Wrapper for memfd_create system call on Android
+static inline int safe_memfd_create(const char *name, unsigned int flags) {
+#ifdef __NR_memfd_create
+    return syscall(__NR_memfd_create, name, flags);
+#else
+    errno = ENOSYS;
+    return -1;
+#endif
+}
 
 // Helper to load Box64 into anonymous memory (memfd) to bypass Android noexec restrictions
 std::string createMemfdBox64(const char* srcPath) {
@@ -33,8 +57,8 @@ std::string createMemfdBox64(const char* srcPath) {
         return "";
     }
 
-    // Create memfd
-    int memfd = memfd_create("box64_mem", MFD_ALLOW_SEALING);
+    // Create memfd using direct syscall wrapper
+    int memfd = safe_memfd_create("box64_mem", MFD_ALLOW_SEALING);
     if (memfd < 0) {
         LOGE("memfd_create failed: %s", strerror(errno));
         close(srcFd);
@@ -61,7 +85,6 @@ std::string createMemfdBox64(const char* srcPath) {
     snprintf(fdPath, sizeof(fdPath), "/proc/self/fd/%d", memfd);
     LOGI("Box64 successfully loaded into memfd at %s", fdPath);
     
-    // Note: We leave `memfd` open so the child process can execute it via the fd path.
     return std::string(fdPath);
 }
 
@@ -161,7 +184,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         if (setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1) != 0) {
             dprintf(
-                    STDERR_FILENO,
+                    STDERR_FILeno,
                     "Failed to set LD_LIBRARY_PATH: %s\n",
                     strerror(errno)
             );
