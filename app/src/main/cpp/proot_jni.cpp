@@ -2,17 +2,22 @@
 #include <jni.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <string>
 #include <android/log.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <sys/stat.h>
 
 #define LOG_TAG "ProotJNI"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+#define LOGI(...) \
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+#define LOGE(...) \
+    __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_your_customemulator_MainActivity_runProotJNI(
@@ -28,6 +33,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         jstring jNativeLibDir,
         jstring jFilesDir) {
 
+    // Convert JNI strings
     const char* proot = env->GetStringUTFChars(jProotLibPath, nullptr);
     const char* rootfs = env->GetStringUTFChars(jRootfs, nullptr);
     const char* prefix = env->GetStringUTFChars(jWinePrefix, nullptr);
@@ -38,104 +44,255 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* nativeDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
     const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
 
+    // Release helper
+    auto releaseStrings = [&]() {
+
+        if (proot)
+            env->ReleaseStringUTFChars(jProotLibPath, proot);
+
+        if (rootfs)
+            env->ReleaseStringUTFChars(jRootfs, rootfs);
+
+        if (prefix)
+            env->ReleaseStringUTFChars(jWinePrefix, prefix);
+
+        if (box64)
+            env->ReleaseStringUTFChars(jBox64, box64);
+
+        if (wine)
+            env->ReleaseStringUTFChars(jWine, wine);
+
+        if (installer)
+            env->ReleaseStringUTFChars(jInstaller, installer);
+
+        if (log)
+            env->ReleaseStringUTFChars(jLogFilePath, log);
+
+        if (nativeDir)
+            env->ReleaseStringUTFChars(jNativeLibDir, nativeDir);
+
+        if (filesDir)
+            env->ReleaseStringUTFChars(jFilesDir, filesDir);
+    };
+
+    // Validate JNI strings
     if (!proot || !rootfs || !prefix || !box64 ||
         !wine || !installer || !log || !nativeDir || !filesDir) {
+
         LOGE("JNI string conversion failed");
+
+        releaseStrings();
         return -1;
     }
 
+    // Create library search path
+    std::string ldPath =
+            std::string(filesDir) + ":" +
+            std::string(nativeDir);
+
+    LOGI("LD_LIBRARY_PATH: %s", ldPath.c_str());
+
+    // Fork process
     pid_t pid = fork();
+
+    if (pid < 0) {
+
+        LOGE("fork failed: %s", strerror(errno));
+
+        releaseStrings();
+        return -2;
+    }
 
     if (pid == 0) {
 
-        int fd = open(log, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        // Redirect stdout and stderr to log file
+        int fd = open(
+                log,
+                O_WRONLY | O_CREAT | O_TRUNC,
+                0666
+        );
 
         if (fd >= 0) {
+
             dup2(fd, STDOUT_FILENO);
             dup2(fd, STDERR_FILENO);
+
             close(fd);
         }
 
-        // Environment
+        // Environment variables
         setenv("PROOT_TMP_DIR", filesDir, 1);
         setenv("PROOT_NO_SECURE", "1", 1);
+
         setenv("WINEPREFIX", prefix, 1);
         setenv("WINEDEBUG", "-all", 1);
         setenv("WINEARCH", "win64", 1);
+
         setenv("DISPLAY", ":0", 1);
 
-        std::string ldPath =
-                std::string(filesDir) + ":" + nativeDir;
+        // IMPORTANT:
+        // Make libtalloc.so.2 visible to the dynamic linker.
+        if (setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1) != 0) {
 
-        // Verify paths
+            dprintf(
+                    STDERR_FILENO,
+                    "Failed to set LD_LIBRARY_PATH: %s\n",
+                    strerror(errno)
+            );
+
+            _exit(20);
+        }
+
+        // Verify Box64
         struct stat st;
 
         if (stat(box64, &st) != 0) {
-            dprintf(2, "Box64 not found: %s\n", strerror(errno));
+
+            dprintf(
+                    STDERR_FILENO,
+                    "Box64 not found: %s\n",
+                    strerror(errno)
+            );
+
             _exit(10);
         }
 
+        // Verify Proot
         if (stat(proot, &st) != 0) {
-            dprintf(2, "Proot not found: %s\n", strerror(errno));
+
+            dprintf(
+                    STDERR_FILENO,
+                    "Proot not found: %s\n",
+                    strerror(errno)
+            );
+
             _exit(11);
         }
 
-        // Run Proot
+        // Verify libtalloc
+        std::string tallocPath =
+                std::string(filesDir) + "/libtalloc.so.2";
+
+        if (stat(tallocPath.c_str(), &st) != 0) {
+
+            dprintf(
+                    STDERR_FILENO,
+                    "libtalloc.so.2 not found: %s\n",
+                    strerror(errno)
+            );
+
+            _exit(13);
+        }
+
+        dprintf(
+                STDERR_FILENO,
+                "Starting Proot...\n"
+        );
+
+        dprintf(
+                STDERR_FILENO,
+                "Rootfs: %s\n",
+                rootfs
+        );
+
+        dprintf(
+                STDERR_FILENO,
+                "Wine: %s\n",
+                wine
+        );
+
+        // Proot arguments
         char* const argv[] = {
+
                 (char*)"proot",
+
                 (char*)"--link2symlink",
+
                 (char*)"-0",
-                (char*)"-r", (char*)rootfs,
 
-                (char*)"-b", (char*)"/system",
-                (char*)"-b", (char*)"/apex",
-                (char*)"-b", (char*)"/vendor",
-                (char*)"-b", (char*)"/dev",
-                (char*)"-b", (char*)"/proc",
-                (char*)"-b", (char*)"/sys",
-                (char*)"-b", (char*)"/data",
+                (char*)"-r",
+                (char*)rootfs,
 
-                (char*)"-w", (char*)"/",
+                (char*)"-b",
+                (char*)"/system",
 
-                // Do not execute the Android native-library
-                // path directly through Proot.
+                (char*)"-b",
+                (char*)"/apex",
+
+                (char*)"-b",
+                (char*)"/vendor",
+
+                (char*)"-b",
+                (char*)"/dev",
+
+                (char*)"-b",
+                (char*)"/proc",
+
+                (char*)"-b",
+                (char*)"/sys",
+
+                (char*)"-b",
+                (char*)"/data",
+
+                (char*)"-w",
+                (char*)"/",
+
+                // Box64 and Wine
                 (char*)box64,
                 (char*)wine,
                 (char*)installer,
+
                 nullptr
         };
 
+        // Execute Proot
         execv(proot, argv);
 
-        dprintf(2, "Proot execv failed: %s\n", strerror(errno));
+        // Only reached if execv fails
+        dprintf(
+                STDERR_FILENO,
+                "Proot execv failed: %s\n",
+                strerror(errno)
+        );
 
         _exit(12);
-
-    } else if (pid > 0) {
-
-        int status = 0;
-
-        if (waitpid(pid, &status, 0) == -1) {
-            LOGE("waitpid failed: %s", strerror(errno));
-        } else if (WIFEXITED(status)) {
-            LOGI("Proot exit code: %d", WEXITSTATUS(status));
-        } else if (WIFSIGNALED(status)) {
-            LOGE("Proot killed by signal: %d", WTERMSIG(status));
-        }
-
-    } else {
-        LOGE("fork failed: %s", strerror(errno));
     }
 
-    env->ReleaseStringUTFChars(jProotLibPath, proot);
-    env->ReleaseStringUTFChars(jRootfs, rootfs);
-    env->ReleaseStringUTFChars(jWinePrefix, prefix);
-    env->ReleaseStringUTFChars(jBox64, box64);
-    env->ReleaseStringUTFChars(jWine, wine);
-    env->ReleaseStringUTFChars(jInstaller, installer);
-    env->ReleaseStringUTFChars(jLogFilePath, log);
-    env->ReleaseStringUTFChars(jNativeLibDir, nativeDir);
-    env->ReleaseStringUTFChars(jFilesDir, filesDir);
+    // Parent process
+    int status = 0;
+    jint result = -3;
 
-    return 0;
+    if (waitpid(pid, &status, 0) == -1) {
+
+        LOGE(
+                "waitpid failed: %s",
+                strerror(errno)
+        );
+
+    } else if (WIFEXITED(status)) {
+
+        int exitCode = WEXITSTATUS(status);
+
+        LOGI(
+                "Proot exit code: %d",
+                exitCode
+        );
+
+        result = exitCode;
+
+    } else if (WIFSIGNALED(status)) {
+
+        int signalNumber = WTERMSIG(status);
+
+        LOGE(
+                "Proot killed by signal: %d",
+                signalNumber
+        );
+
+        result = -100 - signalNumber;
+    }
+
+    releaseStrings();
+
+    return result;
 }
