@@ -1,4 +1,3 @@
-
 name: Build Android APK
 
 on:
@@ -24,6 +23,8 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
 
       - name: Install dependencies
         run: |
@@ -52,6 +53,7 @@ jobs:
           export AR="$NDK/llvm-ar"
           export RANLIB="$NDK/llvm-ranlib"
           export STRIP="$NDK/llvm-strip"
+          export CFLAGS="-fPIC -D__ANDROID_API__=$API"
 
           wget -q https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
           tar -xf talloc-2.4.1.tar.gz
@@ -60,8 +62,11 @@ jobs:
           ./configure \
             --prefix="$GITHUB_WORKSPACE/talloc-install" \
             --host="$TARGET" \
+            --disable-python \
+            --disable-rpath \
             --cross-compile \
-            --cross-execute='/bin/true'
+            --cross-execute='/bin/true' \
+            CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="$CFLAGS"
 
           make -j"$(nproc)"
           make install
@@ -77,49 +82,48 @@ jobs:
           NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
           export CC="$NDK/aarch64-linux-android24-clang"
-          export STRIP="$NDK/llvm-strip"
+          export CXX="$NDK/aarch64-linux-android24-clang++"
+          export CPPFLAGS="-I$GITHUB_WORKSPACE/talloc-install/include"
+          export LDFLAGS="-L$GITHUB_WORKSPACE/talloc-install/lib -ltalloc -llog"
 
-          # GNU binutils for object-format detection and conversion
+          # ✅ GNU binutils - elf64-little නිවැරදිව හඳුනනවා
+          export STRIP="/usr/bin/aarch64-linux-gnu-strip"
           export OBJCOPY="/usr/bin/aarch64-linux-gnu-objcopy"
           export OBJDUMP="/usr/bin/aarch64-linux-gnu-objdump"
 
           git clone https://github.com/termux/proot.git
           cd proot
 
-          # Create the Box64 execution patch header.
-          # IMPORTANT: Replace this placeholder with your original
-          # working memfd_exec.h implementation if you have one.
+          # ✅ ඇත්තම memfd patch එක
           cat > src/memfd_exec.h <<'EOF'
-          #ifndef MEMFD_EXEC_H
-          #define MEMFD_EXEC_H
-
-          #include <fcntl.h>
-          #include <stdio.h>
-          #include <string.h>
-          #include <sys/mman.h>
           #include <unistd.h>
+          #include <fcntl.h>
+          #include <sys/syscall.h>
+          #include <string.h>
+          #include <stdio.h>
 
-          static inline char *patch_box64_exec(char *filename)
-          {
-              static char path[4096];
-
-              if (filename == NULL)
-                  return filename;
-
-              snprintf(path, sizeof(path), "%s", filename);
-              return path;
+          static inline const char* patch_box64_exec(const char *pathname) {
+              if (!pathname || !strstr(pathname, "libbox64.so")) return pathname;
+              int src_fd = open(pathname, O_RDONLY);
+              if (src_fd < 0) return pathname;
+              int mem_fd = syscall(__NR_memfd_create, "box64_memfd", 0x0001);
+              if (mem_fd < 0) { close(src_fd); return pathname; }
+              char buf[8192]; ssize_t n;
+              while ((n = read(src_fd, buf, sizeof(buf))) > 0) write(mem_fd, buf, n);
+              close(src_fd);
+              static __thread char ppath[64];
+              snprintf(ppath, sizeof(ppath), "/proc/self/fd/%d", mem_fd);
+              return ppath;
           }
-
-          #endif
           EOF
 
-          # Include the patch header.
-          sed -i '1i#include "memfd_exec.h"' src/syscall/enter.c
-          sed -i '1i#include "memfd_exec.h"' src/tracee/event.c
+          sed -i '1i #include "../memfd_exec.h"' src/syscall/enter.c
+          sed -i '1i #include "../memfd_exec.h"' src/tracee/event.c
+          sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/syscall/enter.c
+          sed -i 's/\bexecveat(/execveat(patch_box64_exec(/g' src/syscall/enter.c
+          sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/tracee/event.c
 
           cd src
-
-          # Build PRoot using GNU binutils.
           make -j"$(nproc)" \
             CC="$CC" \
             STRIP="$STRIP" \
@@ -129,9 +133,7 @@ jobs:
           test -f proot
 
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
-
-          cp proot \
-            "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
+          cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
 
       - name: Decode release keystore
         env:
@@ -150,8 +152,12 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          chmod +x ./gradlew
-          ./gradlew assembleRelease
+          chmod +x ./gradlew 2>/dev/null || true
+          gradle assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/my-release-key.jks \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
