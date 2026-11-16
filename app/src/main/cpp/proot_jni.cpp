@@ -67,8 +67,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         std::string ldPath =
                 std::string(filesDir) + ":" + nativeDir;
 
-        setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1);
-
         // Verify paths
         struct stat st;
 
