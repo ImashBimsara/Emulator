@@ -56,6 +56,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         std::string ldPath = std::string(filesDir) + ":" + std::string(nativeLibDir);
         setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1);
 
+        // ✅ අපේ execve hook එක (libexechook.so) proot එකට load කරන්න
+        std::string hookPath = std::string(nativeLibDir) + "/libexechook.so";
+        setenv("LD_PRELOAD", hookPath.c_str(), 1);
+        LOGI("LD_PRELOAD set to: %s", hookPath.c_str());
+
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
