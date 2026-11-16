@@ -40,24 +40,40 @@ jobs:
         unzip -q android-ndk-r25c-linux.zip
         echo "ANDROID_NDK_HOME=$PWD/android-ndk-r25c" >> $GITHUB_ENV
 
-    - name: Build libtalloc for Android
-      run: |
-        export NDK=$ANDROID_NDK_HOME
-        export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
-        export TARGET=aarch64-linux-android
-        export API=24
-        export CC=$TOOLCHAIN/bin/$TARGET$API-clang
-        export CXX=$TOOLCHAIN/bin/$TARGET$API-clang++
-        export AR=$TOOLCHAIN/bin/llvm-ar
-        export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
-        
-        wget https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
-        tar -xf talloc-2.4.1.tar.gz
-        cd talloc-2.4.1
-        ./configure --host=$TARGET --disable-python --prefix=$PWD/../talloc_out
-        make -j$(nproc)
-        make install
-        cd ..
+        - name: Build libtalloc for Android
+          run: |
+            export NDK=$ANDROID_NDK_HOME
+            export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+            export TARGET=aarch64-linux-android
+            export API=24
+            export CC=$TOOLCHAIN/bin/$TARGET$API-clang
+            export CXX=$TOOLCHAIN/bin/$TARGET$API-clang++
+            export AR=$TOOLCHAIN/bin/llvm-ar
+            export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
+            export CFLAGS="-fPIC -D__ANDROID_API__=$API"
+            export LDFLAGS=""
+            
+            wget -q https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
+            tar -xf talloc-2.4.1.tar.gz
+            cd talloc-2.4.1
+            
+            # ✅ --cross-compile සහ --cross-execute එකතු කළා
+            ./configure \
+              --host=$TARGET \
+              --disable-python \
+              --disable-rpath \
+              --cross-compile \
+              --cross-execute='/bin/true' \
+              --prefix=$PWD/../talloc_out \
+              CC="$CC" \
+              AR="$AR" \
+              RANLIB="$RANLIB" \
+              CFLAGS="$CFLAGS"
+            
+            make -j$(nproc)
+            make install
+            cd ..
+            echo "✅ talloc built successfully!"
 
     - name: Clone, Patch, and Compile PRoot
       run: |
