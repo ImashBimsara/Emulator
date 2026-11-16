@@ -86,6 +86,10 @@ jobs:
         git clone https://github.com/termux/proot.git
         cd proot
 
+        # ✅ GNUmakefile එකේ objcopy output targets නිවැරදි කිරීම
+        sed -i 's/elf64-little/elf64-littleaarch64/g' src/GNUmakefile
+        sed -i 's/elf32-little/elf32-littlearm/g' src/GNUmakefile
+
         cat << 'EOF' > src/memfd_exec.h
         #include <unistd.h>
         #include <fcntl.h>
