@@ -21,7 +21,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.RandomAccessFile
 
 class MainActivity : AppCompatActivity() {
 
@@ -156,14 +155,13 @@ class MainActivity : AppCompatActivity() {
                 Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
                 val rootfsDir = File(imagefsDir, "rootfs")
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
-                // ✅ path එක usr/bin/box64 ලෙස වෙනස් කළා
-                val box64File = File(rootfsDir, "usr/bin/box64")
                 
                 val nativeLibDir = applicationInfo.nativeLibraryDir
+                val box64File = File(nativeLibDir, "libbox64.so")
                 val prootLibFile = File(nativeLibDir, "libproot.so")
                 
                 Logger.log(this@MainActivity, "Wine exists: ${wineFile.exists()}")
-                Logger.log(this@MainActivity, "Box64 exists: ${box64File.exists()}")
+                Logger.log(this@MainActivity, "Box64 (lib) exists: ${box64File.exists()}")
                 Logger.log(this@MainActivity, "Proot (lib) exists: ${prootLibFile.exists()}")
                 
                 withContext(Dispatchers.Main) {
@@ -212,11 +210,12 @@ class MainActivity : AppCompatActivity() {
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibPath = File(nativeLibDir, "libproot.so").absolutePath
                 
+                // ✅ Box64 එකේ host path එක (nativeLibraryDir)
+                val box64HostPath = File(nativeLibDir, "libbox64.so").absolutePath
+                
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
                 File(installerPath).copyTo(internalInstaller, overwrite = true)
        
-                // ✅ path එක /usr/bin/box64 ලෙස වෙනස් කළා
-                val box64InternalPath = "/usr/bin/box64" 
                 val wineInternalPath = "/opt/wine/bin/wine"
                 val installerInternalPath = "/home/xuser/installer.exe"
                 val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
@@ -225,16 +224,15 @@ class MainActivity : AppCompatActivity() {
     
                 Logger.log(this, "=== Starting Wine Installation via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
+                Logger.log(this, "Box64 Host Path: $box64HostPath")
 
                 // ========== DIAGNOSTIC LOGS ==========
                 Logger.log(this, "=== DIAGNOSTIC: Box64 File Info ===")
-                val box64FullPath = File(rootfsDir, "usr/bin/box64")
-                Logger.log(this, "Box64 path: ${box64FullPath.absolutePath}")
+                val box64FullPath = File(box64HostPath)
                 Logger.log(this, "Box64 exists: ${box64FullPath.exists()}")
                 Logger.log(this, "Box64 size: ${box64FullPath.length()} bytes")
                 Logger.log(this, "Box64 canExecute: ${box64FullPath.canExecute()}")
-                Logger.log(this, "Box64 canRead: ${box64FullPath.canRead()}")
-
+                
                 if (box64FullPath.exists()) {
                     try {
                         val bytes = ByteArray(4)
@@ -246,24 +244,13 @@ class MainActivity : AppCompatActivity() {
                         Logger.log(this, "❌ Error reading box64 bytes: ${e.message}")
                     }
                 }
-
-                val usrBinDir = File(rootfsDir, "usr/bin")
-                Logger.log(this, "usr/bin exists: ${usrBinDir.exists()}")
-                if (usrBinDir.exists()) {
-                    usrBinDir.listFiles()?.forEach { file ->
-                        Logger.log(this, "  Found in usr/bin: ${file.name} (${file.length()} bytes)")
-                    }
-                }
-
-                val systemBinLinker = File(rootfsDir, "system/bin/linker64")
-                Logger.log(this, "Guest system/bin/linker64 exists: ${systemBinLinker.exists()}")
                 // =====================================
     
                 val result = runProotJNI(
                     prootLibPath, 
                     rootfsDir, 
                     winePrefixHostPath, 
-                    box64InternalPath, 
+                    box64HostPath, // ✅ host path එක යවනවා
                     wineInternalPath, 
                     installerInternalPath,
                     logFilePath,
