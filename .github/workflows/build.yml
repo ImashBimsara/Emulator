@@ -42,12 +42,12 @@ jobs:
 
     - name: Get libtalloc from Termux
       run: |
-        wget -q https://packages.termux.dev/apt/termux-main/pool/main/libt/libtalloc/libtalloc_2.4.1_aarch64.deb
+        wget -q https://mirrors.cqupt.edu.cn/termux/termux-main/pool/main/libt/libtalloc/libtalloc_2.4.1_aarch64.deb
         ar x libtalloc_2.4.1_aarch64.deb
         tar -xf data.tar.xz
         mkdir -p talloc_out/lib talloc_out/include
         cp data/data/com.termux/files/usr/lib/libtalloc.so* talloc_out/lib/
-        cp data/data/com.termux/files/usr/include/talloc.h talloc_out/include/
+        cp data/data/com.termux/files/usr/include/talloc.h talloc_out/include
 
     - name: Clone, Patch, and Compile PRoot
       run: |
