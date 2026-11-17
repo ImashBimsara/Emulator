@@ -31,12 +31,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bison flex libtool autoconf automake \
-            pkg-config zip unzip wget git make \
+            pkg-config zip unzip wget curl git make \
             binutils-aarch64-linux-gnu
 
       - name: Download Android NDK
         run: |
-          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          # ✅ curl පාවිච්චි කරනවා wget වෙනුවට
+          curl -L -o android-ndk-r25c-linux.zip https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
           unzip -q android-ndk-r25c-linux.zip -d "$HOME"
           echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> "$GITHUB_ENV"
 
@@ -55,7 +56,8 @@ jobs:
           export STRIP="$NDK/llvm-strip"
           export CFLAGS="-fPIC -D__ANDROID_API__=$API"
 
-          wget -q https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
+          # ✅ curl පාවිච්චි කරලා talloc බාගන්නවා
+          curl -L -o talloc-2.4.1.tar.gz https://download.samba.org/pub/talloc/talloc-2.4.1.tar.gz
           tar -xf talloc-2.4.1.tar.gz
           cd talloc-2.4.1
 
@@ -94,7 +96,7 @@ jobs:
           git clone https://github.com/termux/proot.git
           cd proot
 
-          # ✅ ඇත්තම memfd patch එක (Fixed)
+          # ✅ ඇත්තම memfd patch එක (Permission Denied fix කරලා)
           cat > src/memfd_exec.h <<'EOF'
           #include <unistd.h>
           #include <fcntl.h>
