@@ -94,23 +94,32 @@ jobs:
           git clone https://github.com/termux/proot.git
           cd proot
 
-          # ✅ ඇත්තම memfd patch එක
+          # ✅ ඇත්තම memfd patch එක (Fixed)
           cat > src/memfd_exec.h <<'EOF'
           #include <unistd.h>
           #include <fcntl.h>
           #include <sys/syscall.h>
           #include <string.h>
           #include <stdio.h>
+          #include <sys/stat.h>
+          #include <errno.h>
 
           static inline const char* patch_box64_exec(const char *pathname) {
               if (!pathname || !strstr(pathname, "libbox64.so")) return pathname;
               int src_fd = open(pathname, O_RDONLY);
               if (src_fd < 0) return pathname;
-              int mem_fd = syscall(__NR_memfd_create, "box64_memfd", 0x0001);
+              
+              // ✅ MFD_CLOEXEC අයින් කළා. දැන් fd එක close වෙන්නේ නෑ.
+              int mem_fd = syscall(__NR_memfd_create, "box64_memfd", 0);
               if (mem_fd < 0) { close(src_fd); return pathname; }
+              
               char buf[8192]; ssize_t n;
               while ((n = read(src_fd, buf, sizeof(buf))) > 0) write(mem_fd, buf, n);
               close(src_fd);
+              
+              // ✅ Execute permission එක දෙනවා
+              fchmod(mem_fd, 0755);
+              
               static __thread char ppath[64];
               snprintf(ppath, sizeof(ppath), "/proc/self/fd/%d", mem_fd);
               return ppath;
