@@ -110,39 +110,15 @@ jobs:
             echo "Warning: loader/loader not found."
           fi
 
-      - name: Build Box64 (Android Native)
+      - name: Download Pre-compiled Box64 (Linux glibc/musl)
         shell: bash
         run: |
           set -e
-          git clone https://github.com/ptitSeb/box64.git
-          cd box64
+          # Download a pre-built Box64 for ARM64 Linux (not Android NDK) to fix libc resolution
+          wget -q -O box64 https://github.com/ptitSeb/box64/releases/download/v0.3.0/box64-v0.3.0-arm64
+          chmod +x box64
           
-          # Inject dummy implementations (stubs) for missing Linux POSIX functions
-          cat << 'EOF' >> src/main.c
-
-          // --- Android NDK API 24 Linker Stubs ---
-          int pthread_attr_getinheritsched(void* attr, int* inheritsched) { return 0; }
-          int pthread_attr_setinheritsched(void* attr, int inheritsched) { return 0; }
-          int pthread_mutexattr_getprotocol(void* attr, int* protocol) { return 0; }
-          int pthread_mutexattr_setprotocol(void* attr, int protocol) { return 0; }
-          int glob(const char* pattern, int flags, void* errfunc, void* pglob) { return -1; }
-          void globfree(void* pglob) {}
-          int posix_spawn(void* pid, const char* path, void* file_actions, void* attrp, void* argv, void* envp) { return -1; }
-          int posix_spawnp(void* pid, const char* file, void* file_actions, void* attrp, void* argv, void* envp) { return -1; }
-          int semctl(int semid, int semnum, int cmd, ...) { return -1; }
-          EOF
-
-          mkdir build && cd build
-          
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
-            -DANDROID_PLATFORM=android-24 \
-            -DANDROID_ABI=arm64-v8a \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DANDROID=1
-            
-          make -j"$(nproc)"
-          
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           cp box64 "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
 
       - name: Decode release keystore
