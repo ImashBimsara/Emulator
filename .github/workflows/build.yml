@@ -36,7 +36,7 @@ jobs:
 
       - name: Download Android NDK
         run: |
-          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          wget https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
           unzip -q android-ndk-r25c-linux.zip -d "$HOME"
           echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> "$GITHUB_ENV"
 
@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -e
-
+          
           NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TARGET=aarch64-linux-android
           API=24
@@ -55,7 +55,8 @@ jobs:
           export STRIP="$NDK/llvm-strip"
           export CFLAGS="-fPIC -D__ANDROID_API__=$API"
 
-          wget -q https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
+          # මෙතන URL එක වෙනස් කරන්න සහ -q අයින් කරන්න:
+          wget https://download.samba.org/pub/talloc/talloc-2.4.1.tar.gz
           tar -xf talloc-2.4.1.tar.gz
           cd talloc-2.4.1
 
@@ -73,37 +74,7 @@ jobs:
 
           echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/talloc-install/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "TALLOC_INSTALL=$GITHUB_WORKSPACE/talloc-install" >> "$GITHUB_ENV"
-
-      - name: Build PRoot
-        shell: bash
-        run: |
-          set -e
-
-          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
-          export CC="$NDK/aarch64-linux-android24-clang"
-          export CXX="$NDK/aarch64-linux-android24-clang++"
-          export CPPFLAGS="-I$GITHUB_WORKSPACE/talloc-install/include"
-          export LDFLAGS="-L$GITHUB_WORKSPACE/talloc-install/lib -ltalloc -llog"
-
-          export STRIP="/usr/bin/aarch64-linux-gnu-strip"
-          export OBJCOPY="/usr/bin/aarch64-linux-gnu-objcopy"
-          export OBJDUMP="/usr/bin/aarch64-linux-gnu-objdump"
-
-          git clone https://github.com/termux/proot.git
-          cd proot/src
-
-          make -j"$(nproc)" \
-            CC="$CC" \
-            STRIP="$STRIP" \
-            OBJCOPY="$OBJCOPY" \
-            OBJDUMP="$OBJDUMP"
-
-          test -f proot
-
-          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
-          cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
-
+          
       - name: Diagnose Box64 and PRoot ELF
         shell: bash
         run: |
