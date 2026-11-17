@@ -32,11 +32,11 @@ jobs:
           sudo apt-get install -y \
             bison flex libtool autoconf automake \
             pkg-config zip unzip wget git make \
-            binutils-aarch64-linux-gnu file cmake
+            binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-aarch64-linux-gnu file cmake
 
       - name: Download Android NDK
         run: |
-          wget https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
           unzip -q android-ndk-r25c-linux.zip -d "$HOME"
           echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> "$GITHUB_ENV"
 
@@ -54,7 +54,7 @@ jobs:
           export STRIP="$NDK/llvm-strip"
           export CFLAGS="-fPIC -D__ANDROID_API__=$API"
 
-          wget -O talloc-2.4.1.tar.gz https://ftp.ludd.ltu.se/mirrors/blfs/conglomeration/talloc/talloc-2.4.1.tar.gz
+          wget -q -O talloc-2.4.1.tar.gz https://ftp.ludd.ltu.se/mirrors/blfs/conglomeration/talloc/talloc-2.4.1.tar.gz
           tar -xf talloc-2.4.1.tar.gz
           cd talloc-2.4.1
 
@@ -91,7 +91,6 @@ jobs:
           git clone https://github.com/termux/proot.git
           cd proot/src
 
-          # Just run 'make', the Makefile will handle the dependencies
           make -j"$(nproc)" \
             CC="$CC" \
             STRIP="$STRIP" \
@@ -103,20 +102,30 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
           
-          # The PRoot Makefile builds the loader as 'loader/loader'
           if [ -f "loader/loader" ]; then
             cp loader/loader "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libloader.so"
           else
             echo "Warning: loader/loader not found."
           fi
 
-      - name: Download Pre-compiled Box64 (Linux glibc/musl)
+      - name: Build Box64 (Linux Native via Cross-Compile)
         shell: bash
         run: |
           set -e
-          # Download a pre-built Box64 for ARM64 Linux (not Android NDK) to fix libc resolution
-          wget -q -O box64 https://github.com/ptitSeb/box64/releases/download/v0.3.0/box64-v0.3.0-arm64
-          chmod +x box64
+          git clone https://github.com/ptitSeb/box64.git
+          cd box64
+          mkdir build && cd build
+          
+          # Linux (glibc) පරිසරයට ගැලපෙන ලෙස ARM64 Architecture එකට Cross-compile කිරීම
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DARM_DYNAREC=ON \
+            -DCMAKE_BUILD_TYPE=Release
+            
+          make -j"$(nproc)"
           
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           cp box64 "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
