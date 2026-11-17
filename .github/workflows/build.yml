@@ -73,7 +73,7 @@ jobs:
           echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/talloc-install/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "TALLOC_INSTALL=$GITHUB_WORKSPACE/talloc-install" >> "$GITHUB_ENV"
 
-      - name: Build PRoot and Loader
+      - name: Build PRoot
         shell: bash
         run: |
           set -e
@@ -91,24 +91,24 @@ jobs:
           git clone https://github.com/termux/proot.git
           cd proot/src
 
-          # PRoot සහ Loader දෙකම එකවර Build කරනවා!
+          # Just run 'make', the Makefile will handle the dependencies
           make -j"$(nproc)" \
             CC="$CC" \
             STRIP="$STRIP" \
             OBJCOPY="$OBJCOPY" \
-            OBJDUMP="$OBJDUMP" \
-            proot loader
+            OBJDUMP="$OBJDUMP"
 
           test -f proot
-          test -f loader
 
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
-          
-          # Proot එක දානවා
           cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
           
-          # අලුතින් හදපු Loader එකත් App එකට දානවා
-          cp loader "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libloader.so"
+          # The PRoot Makefile builds the loader as 'loader/loader'
+          if [ -f "loader/loader" ]; then
+            cp loader/loader "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libloader.so"
+          else
+            echo "Warning: loader/loader not found."
+          fi
 
       - name: Build Box64 (Android Native)
         shell: bash
