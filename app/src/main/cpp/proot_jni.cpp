@@ -104,6 +104,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         setenv("DISPLAY", ":0", 1);
 
+        // Configure the Termux PRoot Loader (Trampoline) to bypass Android execution limits
+        std::string loaderPath = std::string(nativeDir) + "/libloader.so";
+        setenv("PROOT_LOADER", loaderPath.c_str(), 1);
+        setenv("PROOT_LOADER_64", loaderPath.c_str(), 1);
+
         if (setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1) != 0) {
             dprintf(
                     STDERR_FILENO,
@@ -137,15 +142,13 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             _exit(13);
         }
 
-        // Use Android's System Linker to load Box64 and bypass PRoot's ELF interpreter issue
-        std::string linkerCmd = "/system/bin/linker64";
-
-        dprintf(STDERR_FILENO, "Starting Proot with native Box64 via Linker64...\n");
+        dprintf(STDERR_FILENO, "Starting Proot with Native Box64 and Loader Trampoline...\n");
         dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
         dprintf(STDERR_FILENO, "Box64 (native): %s\n", box64Src);
+        dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
         dprintf(STDERR_FILENO, "Wine: %s\n", wine);
 
-        // Proot arguments using the Android System Linker to execute Box64
+        // Proot arguments passing Box64 directly; the loader intercepts and handles permissions.
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
@@ -169,8 +172,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"-w",
                 (char*)"/",
                 
-                // Direct the execution through the system linker
-                (char*)linkerCmd.c_str(),
                 (char*)box64Src,
                 (char*)wine,
                 (char*)installer,
