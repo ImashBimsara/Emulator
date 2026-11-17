@@ -55,8 +55,8 @@ jobs:
           export STRIP="$NDK/llvm-strip"
           export CFLAGS="-fPIC -D__ANDROID_API__=$API"
 
-          # Samba server එක down නිසා Debian mirror එක පාවිච්චි කරමු
-          wget -O talloc-2.4.1.tar.gz https://deb.debian.org/debian/pool/main/t/talloc/talloc_2.4.1.orig.tar.gz
+          # BLFS Mirror එකකින් හරියටම 2.4.1 version එක download කරමු
+          wget -O talloc-2.4.1.tar.gz https://ftp.ludd.ltu.se/mirrors/blfs/conglomeration/talloc/talloc-2.4.1.tar.gz
           tar -xf talloc-2.4.1.tar.gz
           cd talloc-2.4.1
 
