@@ -104,21 +104,23 @@ jobs:
         shell: bash
         run: |
           set -e
-          # මෙතනදී Box64 Android වලට ගැලපෙන්න Compile කරනවා
           git clone https://github.com/ptitSeb/box64.git
           cd box64
           mkdir build && cd build
           
+          # We must pass TERMUX=1 so Box64 uses its internal shims 
+          # for missing Bionic libc functions like glob and posix_spawn
           cmake .. \
-            -DANDROID=1 \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_PLATFORM=android-24 \
             -DANDROID_ABI=arm64-v8a \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DANDROID=1 \
+            -DTERMUX=1 \
+            -DNO_SHM=1
             
           make -j"$(nproc)"
           
-          # Native Library එකක් විදියට App එකට ඇතුල් කරනවා
           cp box64 "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
 
       - name: Decode release keystore
