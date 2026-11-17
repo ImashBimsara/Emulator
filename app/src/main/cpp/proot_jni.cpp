@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <sys/syscall.h>
 
 #define LOG_TAG "ProotJNI"
 
@@ -18,75 +17,6 @@
 
 #define LOGE(...) \
     __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
-// Define __NR_memfd_create if not already defined in Android headers
-#ifndef __NR_memfd_create
-#if defined(__aarch64__)
-#define __NR_memfd_create 279
-#elif defined(__arm__)
-#define __NR_memfd_create 385
-#elif defined(__x86_64__)
-#define __NR_memfd_create 319
-#elif defined(__i386__)
-#define __NR_memfd_create 356
-#endif
-#endif
-
-// Wrapper for memfd_create system call on Android
-static inline int safe_memfd_create(const char *name, unsigned int flags) {
-#ifdef __NR_memfd_create
-    return syscall(__NR_memfd_create, name, flags);
-#else
-    errno = ENOSYS;
-    return -1;
-#endif
-}
-
-// Helper to load Box64 into anonymous memory (memfd) to bypass Android noexec restrictions
-std::string createMemfdBox64(const char* srcPath) {
-    int srcFd = open(srcPath, O_RDONLY);
-    if (srcFd < 0) {
-        LOGE("Failed to open source Box64 %s: %s", srcPath, strerror(errno));
-        return "";
-    }
-
-    struct stat st;
-    if (fstat(srcFd, &st) < 0) {
-        LOGE("Failed to fstat Box64: %s", strerror(errno));
-        close(srcFd);
-        return "";
-    }
-
-    // Create memfd using direct syscall wrapper
-    int memfd = safe_memfd_create("box64_mem", MFD_ALLOW_SEALING);
-    if (memfd < 0) {
-        LOGE("memfd_create failed: %s", strerror(errno));
-        close(srcFd);
-        return "";
-    }
-
-    // Copy binary content into memfd
-    char buffer[8192];
-    ssize_t bytesRead;
-    while ((bytesRead = read(srcFd, buffer, sizeof(buffer))) > 0) {
-        ssize_t written = write(memfd, buffer, bytesRead);
-        if (written != bytesRead) {
-            LOGE("Failed to write into memfd: %s", strerror(errno));
-            close(srcFd);
-            close(memfd);
-            return "";
-        }
-    }
-
-    close(srcFd);
-
-    // Return the /proc/self/fd path for the memfd
-    char fdPath[64];
-    snprintf(fdPath, sizeof(fdPath), "/proc/self/fd/%d", memfd);
-    LOGI("Box64 successfully loaded into memfd at %s", fdPath);
-    
-    return std::string(fdPath);
-}
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_your_customemulator_MainActivity_runProotJNI(
@@ -132,14 +62,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         LOGE("JNI string conversion failed");
         releaseStrings();
         return -1;
-    }
-
-    // Load Box64 into anonymous memory via memfd to completely bypass noexec restriction
-    std::string box64MemPath = createMemfdBox64(box64Src);
-    if (box64MemPath.empty()) {
-        LOGE("Failed to create memfd for Box64");
-        releaseStrings();
-        return -4;
     }
 
     // Create library search path
@@ -215,12 +137,12 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             _exit(13);
         }
 
-        dprintf(STDERR_FILENO, "Starting Proot with memfd Box64...\n");
+        dprintf(STDERR_FILENO, "Starting Proot with native Box64...\n");
         dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
-        dprintf(STDERR_FILENO, "Box64 (memfd): %s\n", box64MemPath.c_str());
+        dprintf(STDERR_FILENO, "Box64 (native): %s\n", box64Src);
         dprintf(STDERR_FILENO, "Wine: %s\n", wine);
 
-        // Proot arguments using the memfd path for Box64
+        // Proot arguments using the direct native library path for Box64
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
@@ -243,8 +165,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"/data",
                 (char*)"-w",
                 (char*)"/",
-                // Box64 via memfd path and Wine
-                (char*)box64MemPath.c_str(),
+                // Directly execute the native Box64 library
+                (char*)box64Src,
                 (char*)wine,
                 (char*)installer,
                 nullptr
