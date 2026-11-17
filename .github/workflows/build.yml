@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          
+
           NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           TARGET=aarch64-linux-android
           API=24
@@ -55,8 +55,8 @@ jobs:
           export STRIP="$NDK/llvm-strip"
           export CFLAGS="-fPIC -D__ANDROID_API__=$API"
 
-          # මෙතන URL එක වෙනස් කරන්න සහ -q අයින් කරන්න:
-          wget https://download.samba.org/pub/talloc/talloc-2.4.1.tar.gz
+          # Samba server එක down නිසා Debian mirror එක පාවිච්චි කරමු
+          wget -O talloc-2.4.1.tar.gz https://deb.debian.org/debian/pool/main/t/talloc/talloc_2.4.1.orig.tar.gz
           tar -xf talloc-2.4.1.tar.gz
           cd talloc-2.4.1
 
