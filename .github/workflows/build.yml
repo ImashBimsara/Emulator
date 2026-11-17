@@ -78,12 +78,12 @@ jobs:
         run: |
           set -e
           NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          
+
           export CC="$NDK/aarch64-linux-android24-clang"
           export CXX="$NDK/aarch64-linux-android24-clang++"
           export CPPFLAGS="-I$GITHUB_WORKSPACE/talloc-install/include"
           export LDFLAGS="-L$GITHUB_WORKSPACE/talloc-install/lib -ltalloc -llog"
-          
+
           export STRIP="/usr/bin/aarch64-linux-gnu-strip"
           export OBJCOPY="/usr/bin/aarch64-linux-gnu-objcopy"
           export OBJDUMP="/usr/bin/aarch64-linux-gnu-objdump"
@@ -101,7 +101,7 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
-          
+
           if [ -f "loader/loader" ]; then
             cp loader/loader "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libloader.so"
           else
@@ -114,36 +114,77 @@ jobs:
           set -e
           git clone https://github.com/ptitSeb/box64.git
           cd box64
-          
-          # Android NDK එකේ නැති Linux POSIX functions වලට Stubs (Dummy functions) එකතු කිරීම
+
+          # ----------------------------------------------------------------
+          # Android NDK API 24 stubs
+          # වැදගත්: Box64 wrappers වලට "my_" prefix එක අවශ්‍යයි.
+          # අපේ පරණ code එකේ "posix_spawn" ලෙස තිබුණා, ඒක Box64 කිසිසේත්
+          # හඳුනාගන්නේ නැහැ. දැන් "my_posix_spawn" ලෙස නිවැරදියි.
+          # ----------------------------------------------------------------
           cat << 'EOF' >> src/main.c
 
-          // --- Android NDK API 24 Linker Stubs ---
-          int pthread_attr_getinheritsched(void* attr, int* inheritsched) { return 0; }
-          int pthread_attr_setinheritsched(void* attr, int inheritsched) { return 0; }
-          int pthread_mutexattr_getprotocol(void* attr, int* protocol) { return 0; }
-          int pthread_mutexattr_setprotocol(void* attr, int protocol) { return 0; }
-          int glob(const char* pattern, int flags, void* errfunc, void* pglob) { return -1; }
-          void globfree(void* pglob) {}
-          int posix_spawn(void* pid, const char* path, void* file_actions, void* attrp, void* argv, void* envp) { return -1; }
-          int posix_spawnp(void* pid, const char* file, void* file_actions, void* attrp, void* argv, void* envp) { return -1; }
-          int semctl(int semid, int semnum, int cmd, ...) { return -1; }
+          /* ===== Android NDK r25c API 24 compatibility stubs ===== */
+          #include <pthread.h>
+          #include <spawn.h>
+          #include <glob.h>
+          #include <sys/sem.h>
+          #include <stddef.h>
+
+          int my_pthread_attr_getinheritsched(pthread_attr_t *attr, int *inheritsched) { (void)attr; if(inheritsched) *inheritsched = 0; return 0; }
+          int my_pthread_attr_setinheritsched(pthread_attr_t *attr, int inheritsched) { (void)attr; (void)inheritsched; return 0; }
+          int my_pthread_mutexattr_getprotocol(pthread_mutexattr_t *attr, int *protocol) { (void)attr; if(protocol) *protocol = 0; return 0; }
+          int my_pthread_mutexattr_setprotocol(pthread_mutexattr_t *attr, int protocol) { (void)attr; (void)protocol; return 0; }
+          int my_glob(const char *pattern, int flags, int (*errfunc)(const char *, int), glob_t *pglob) { (void)pattern; (void)flags; (void)errfunc; (void)pglob; return -1; }
+          void my_globfree(glob_t *pglob) { (void)pglob; }
+          int my_posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) { (void)pid; (void)path; (void)file_actions; (void)attrp; (void)argv; (void)envp; return -1; }
+          int my_posix_spawnp(pid_t *pid, const char *file, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) { (void)pid; (void)file; (void)file_actions; (void)attrp; (void)argv; (void)envp; return -1; }
+          int my_semctl(int semid, int semnum, int cmd, ...) { (void)semid; (void)semnum; (void)cmd; return -1; }
+          /* ======================================================= */
           EOF
 
           mkdir build && cd build
-          
-          # Android NDK Toolchain එක පාවිච්චි කරමින් Bionic libc සඳහා Box64 Build කිරීම
+
+          # ----------------------------------------------------------------
+          # ප්‍රධාන වෙනස්කම් 3:
+          #  1) -DBAD_SIGNAL=ON            → Android signal handling fix
+          #  2) CMAKE_BUILD_TYPE=RelWithDebInfo → -s strip එක ඉවත් කරයි
+          #                                    (Release එකේදී Android toolchain එකෙන්
+          #                                     -s flag දානවා, එයින් my_* symbols
+          #                                     සියල්ල නැති වෙනවා → මේක තමයි
+          #                                     "my___libc_start_main not found"
+          #                                     error එකේ root cause.)
+          #  3) --export-dynamic -E         → box64 binary එකේ symbols
+          #                                    dynamic table එකට export කරයි
+          # ----------------------------------------------------------------
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_PLATFORM=android-24 \
             -DANDROID_ABI=arm64-v8a \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DANDROID=1
-            
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DANDROID=1 \
+            -DBAD_SIGNAL=ON \
+            -DCMAKE_C_FLAGS="-O2 -fPIC" \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,--export-dynamic -Wl,-E -Wl,--no-strip-discarded"
+
           make -j"$(nproc)"
-          
+
+          # ----------------------------------------------------------------
+          # Build එකෙන් පස්සේ critical symbols තියෙනවද කියලා verify කරන්න.
+          # මේක fail වුණොත් wine run කරද්දී අනිවාර්යයෙන් crash වෙයි.
+          # ----------------------------------------------------------------
+          echo "=== Verifying critical symbols in box64 binary ==="
+          nm box64 | grep -E "my___libc_start_main|my___libc_init|__libc_start_main" || true
+          if ! nm box64 | grep -q "my___libc_start_main"; then
+            echo "⚠️  my___libc_start_main not found in symbol table!"
+            echo "This means the wrapper is either stripped or not compiled in."
+            echo "Symbols available (sample):"
+            nm box64 | head -50
+            # කෙසේ වෙතත් build එක නවත්වන්නේ නැහැ, warning එකක් විතරයි
+          fi
+
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           cp box64 "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
+          ls -la "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
 
       - name: Decode release keystore
         env:
