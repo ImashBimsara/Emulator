@@ -31,13 +31,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bison flex libtool autoconf automake \
-            pkg-config zip unzip wget curl git make \
-            binutils-aarch64-linux-gnu
+            pkg-config zip unzip wget git make \
+            binutils-aarch64-linux-gnu file
 
       - name: Download Android NDK
         run: |
-          # ✅ curl පාවිච්චි කරනවා wget වෙනුවට
-          curl -L -o android-ndk-r25c-linux.zip https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
           unzip -q android-ndk-r25c-linux.zip -d "$HOME"
           echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> "$GITHUB_ENV"
 
@@ -56,8 +55,7 @@ jobs:
           export STRIP="$NDK/llvm-strip"
           export CFLAGS="-fPIC -D__ANDROID_API__=$API"
 
-          # ✅ curl පාවිච්චි කරලා talloc බාගන්නවා
-          curl -L -o talloc-2.4.1.tar.gz https://download.samba.org/pub/talloc/talloc-2.4.1.tar.gz
+          wget -q https://www.samba.org/ftp/talloc/talloc-2.4.1.tar.gz
           tar -xf talloc-2.4.1.tar.gz
           cd talloc-2.4.1
 
@@ -88,53 +86,13 @@ jobs:
           export CPPFLAGS="-I$GITHUB_WORKSPACE/talloc-install/include"
           export LDFLAGS="-L$GITHUB_WORKSPACE/talloc-install/lib -ltalloc -llog"
 
-          # ✅ GNU binutils - elf64-little නිවැරදිව හඳුනනවා
           export STRIP="/usr/bin/aarch64-linux-gnu-strip"
           export OBJCOPY="/usr/bin/aarch64-linux-gnu-objcopy"
           export OBJDUMP="/usr/bin/aarch64-linux-gnu-objdump"
 
           git clone https://github.com/termux/proot.git
-          cd proot
+          cd proot/src
 
-          # ✅ ඇත්තම memfd patch එක (Permission Denied fix කරලා)
-          cat > src/memfd_exec.h <<'EOF'
-          #include <unistd.h>
-          #include <fcntl.h>
-          #include <sys/syscall.h>
-          #include <string.h>
-          #include <stdio.h>
-          #include <sys/stat.h>
-          #include <errno.h>
-
-          static inline const char* patch_box64_exec(const char *pathname) {
-              if (!pathname || !strstr(pathname, "libbox64.so")) return pathname;
-              int src_fd = open(pathname, O_RDONLY);
-              if (src_fd < 0) return pathname;
-              
-              // ✅ MFD_CLOEXEC අයින් කළා. දැන් fd එක close වෙන්නේ නෑ.
-              int mem_fd = syscall(__NR_memfd_create, "box64_memfd", 0);
-              if (mem_fd < 0) { close(src_fd); return pathname; }
-              
-              char buf[8192]; ssize_t n;
-              while ((n = read(src_fd, buf, sizeof(buf))) > 0) write(mem_fd, buf, n);
-              close(src_fd);
-              
-              // ✅ Execute permission එක දෙනවා
-              fchmod(mem_fd, 0755);
-              
-              static __thread char ppath[64];
-              snprintf(ppath, sizeof(ppath), "/proc/self/fd/%d", mem_fd);
-              return ppath;
-          }
-          EOF
-
-          sed -i '1i #include "../memfd_exec.h"' src/syscall/enter.c
-          sed -i '1i #include "../memfd_exec.h"' src/tracee/event.c
-          sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/syscall/enter.c
-          sed -i 's/\bexecveat(/execveat(patch_box64_exec(/g' src/syscall/enter.c
-          sed -i 's/\bexecve(/execve(patch_box64_exec(/g' src/tracee/event.c
-
-          cd src
           make -j"$(nproc)" \
             CC="$CC" \
             STRIP="$STRIP" \
@@ -145,6 +103,35 @@ jobs:
 
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
+
+      - name: Diagnose Box64 and PRoot ELF
+        shell: bash
+        run: |
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          echo "=== Searching for native binaries ==="
+          find "$GITHUB_WORKSPACE" -name "*.so*" -type f
+
+          BOX64="$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
+          PROOT="$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
+
+          if [ -f "$BOX64" ]; then
+            echo "=== BOX64 FILE INFO ==="
+            file "$BOX64"
+            sha256sum "$BOX64"
+            echo "=== BOX64 ELF HEADER & PROGRAM HEADERS ==="
+            "$READELF" -h -l "$BOX64"
+            echo "=== BOX64 DYNAMIC SECTION ==="
+            "$READELF" -d "$BOX64" || true
+          else
+            echo "WARNING: libbox64.so not found at $BOX64"
+          fi
+
+          if [ -f "$PROOT" ]; then
+            echo "=== PROOT ELF HEADER & PROGRAM HEADERS ==="
+            "$READELF" -h -l "$PROOT"
+            echo "=== PROOT DYNAMIC SECTION ==="
+            "$READELF" -d "$PROOT" || true
+          fi
 
       - name: Decode release keystore
         env:
