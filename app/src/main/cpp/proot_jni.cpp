@@ -137,12 +137,15 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             _exit(13);
         }
 
-        dprintf(STDERR_FILENO, "Starting Proot with native Box64...\n");
+        // Use Android's System Linker to load Box64 and bypass PRoot's ELF interpreter issue
+        std::string linkerCmd = "/system/bin/linker64";
+
+        dprintf(STDERR_FILENO, "Starting Proot with native Box64 via Linker64...\n");
         dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
         dprintf(STDERR_FILENO, "Box64 (native): %s\n", box64Src);
         dprintf(STDERR_FILENO, "Wine: %s\n", wine);
 
-        // Proot arguments using the direct native library path for Box64
+        // Proot arguments using the Android System Linker to execute Box64
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
@@ -165,7 +168,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"/data",
                 (char*)"-w",
                 (char*)"/",
-                // Directly execute the native Box64 library
+                
+                // Direct the execution through the system linker
+                (char*)linkerCmd.c_str(),
                 (char*)box64Src,
                 (char*)wine,
                 (char*)installer,
