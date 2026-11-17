@@ -74,7 +74,37 @@ jobs:
 
           echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/talloc-install/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "TALLOC_INSTALL=$GITHUB_WORKSPACE/talloc-install" >> "$GITHUB_ENV"
-          
+
+      - name: Build PRoot
+        shell: bash
+        run: |
+          set -e
+
+          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          export CC="$NDK/aarch64-linux-android24-clang"
+          export CXX="$NDK/aarch64-linux-android24-clang++"
+          export CPPFLAGS="-I$GITHUB_WORKSPACE/talloc-install/include"
+          export LDFLAGS="-L$GITHUB_WORKSPACE/talloc-install/lib -ltalloc -llog"
+
+          export STRIP="/usr/bin/aarch64-linux-gnu-strip"
+          export OBJCOPY="/usr/bin/aarch64-linux-gnu-objcopy"
+          export OBJDUMP="/usr/bin/aarch64-linux-gnu-objdump"
+
+          git clone https://github.com/termux/proot.git
+          cd proot/src
+
+          make -j"$(nproc)" \
+            CC="$CC" \
+            STRIP="$STRIP" \
+            OBJCOPY="$OBJCOPY" \
+            OBJDUMP="$OBJDUMP"
+
+          test -f proot
+
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
+          cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
+
       - name: Diagnose Box64 and PRoot ELF
         shell: bash
         run: |
