@@ -1,67 +1,45 @@
-name: Build Android APK
+name: Build Compatible Box64
 
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-box64:
+    runs-on: ubuntu-20.04  # පරණ Rootfs එකට ගැලපෙන ලෙස Ubuntu 20.04 භාවිතා කිරීම
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.7
-
-      - name: Extract Pre-compiled Binaries (ZIP Hack)
+      - name: Install dependencies
         run: |
-          # ZIP ෆයිල් එක දිගහැරීම
-          cd app/src/main/jniLibs/arm64-v8a/
-          unzip -o libs.zip
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake make git
+
+      - name: Build Box64 (Linux Native via Cross-Compile)
+        run: |
+          git clone https://github.com/ptitSeb/box64.git
+          cd box64
+          mkdir build && cd build
           
-          # APK එකට ZIP ෆයිල් එක එකතු වීම වැළැක්වීමට එය මකා දැමීම
-          rm libs.zip
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DARM_DYNAREC=ON \
+            -DCMAKE_BUILD_TYPE=Release
+            
+          make -j"$(nproc)"
           
-          # ෆයිල් නිවැරදිව දිගහැරුණාදැයි පරීක්ෂා කිරීම
-          ls -la
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          cp box64 "$GITHUB_WORKSPACE/output/libbox64.so"
 
-      - name: Decode release keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 --decode > app/my-release-key.jks
-          fi
-
-      - name: Build release APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          chmod +x ./gradlew 2>/dev/null || true
-          gradle assembleRelease \
-            -Pandroid.injected.signing.store.file=$(pwd)/app/my-release-key.jks \
-            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
-
-      - name: Upload APK
+      - name: Upload libbox64.so
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-release-apk
-          path: app/build/outputs/apk/release/*.apk
-          retention-days: 3
+          name: compatible-libbox64
+          path: output/libbox64.so
+          retention-days: 1
