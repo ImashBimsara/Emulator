@@ -1,212 +1,160 @@
-#include <jni.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
-#include <string>
-#include <android/log.h>
-#include <errno.h>
-#include <string.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <sys/mman.h>
+name: Build Android APK
 
-#define LOG_TAG "ProotJNI"
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
 
-#define LOGI(...) \
-    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-#define LOGE(...) \
-    __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-extern "C" JNIEXPORT jint JNICALL
-Java_com_your_customemulator_MainActivity_runProotJNI(
-        JNIEnv* env,
-        jobject,
-        jstring jProotLibPath,
-        jstring jRootfs,
-        jstring jWinePrefix,
-        jstring jBox64,
-        jstring jWine,
-        jstring jInstaller,
-        jstring jLogFilePath,
-        jstring jNativeLibDir,
-        jstring jFilesDir) {
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-    // Convert JNI strings
-    const char* proot = env->GetStringUTFChars(jProotLibPath, nullptr);
-    const char* rootfs = env->GetStringUTFChars(jRootfs, nullptr);
-    const char* prefix = env->GetStringUTFChars(jWinePrefix, nullptr);
-    const char* box64Src = env->GetStringUTFChars(jBox64, nullptr);
-    const char* wine = env->GetStringUTFChars(jWine, nullptr);
-    const char* installer = env->GetStringUTFChars(jInstaller, nullptr);
-    const char* log = env->GetStringUTFChars(jLogFilePath, nullptr);
-    const char* nativeDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
-    const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
 
-    // Release helper
-    auto releaseStrings = [&]() {
-        if (proot) env->ReleaseStringUTFChars(jProotLibPath, proot);
-        if (rootfs) env->ReleaseStringUTFChars(jRootfs, rootfs);
-        if (prefix) env->ReleaseStringUTFChars(jWinePrefix, prefix);
-        if (box64Src) env->ReleaseStringUTFChars(jBox64, box64Src);
-        if (wine) env->ReleaseStringUTFChars(jWine, wine);
-        if (installer) env->ReleaseStringUTFChars(jInstaller, installer);
-        if (log) env->ReleaseStringUTFChars(jLogFilePath, log);
-        if (nativeDir) env->ReleaseStringUTFChars(jNativeLibDir, nativeDir);
-        if (filesDir) env->ReleaseStringUTFChars(jFilesDir, filesDir);
-    };
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          # gcc-aarch64-linux-gnu සහ g++-aarch64-linux-gnu යොදාගෙන Box64 Linux සඳහා cross-compile කරමු.
+          sudo apt-get install -y \
+            bison flex libtool autoconf automake \
+            pkg-config zip unzip wget git make \
+            binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-aarch64-linux-gnu file cmake
 
-    // Validate JNI strings
-    if (!proot || !rootfs || !prefix || !box64Src ||
-        !wine || !installer || !log || !nativeDir || !filesDir) {
-        LOGE("JNI string conversion failed");
-        releaseStrings();
-        return -1;
-    }
+      - name: Download Android NDK
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          unzip -q android-ndk-r25c-linux.zip -d "$HOME"
+          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> "$GITHUB_ENV"
 
-    // Create library search path
-    std::string ldPath =
-            std::string(filesDir) + ":" +
-            std::string(nativeDir);
+      - name: Build Talloc (Android Native)
+        shell: bash
+        run: |
+          set -e
+          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          TARGET=aarch64-linux-android
+          API=24
 
-    LOGI("LD_LIBRARY_PATH: %s", ldPath.c_str());
+          export CC="$NDK/${TARGET}${API}-clang"
+          export AR="$NDK/llvm-ar"
+          export RANLIB="$NDK/llvm-ranlib"
+          export STRIP="$NDK/llvm-strip"
+          export CFLAGS="-fPIC -D__ANDROID_API__=$API"
 
-    // Fork process
-    pid_t pid = fork();
+          wget -q -O talloc-2.4.1.tar.gz https://ftp.ludd.ltu.se/mirrors/blfs/conglomeration/talloc/talloc-2.4.1.tar.gz
+          tar -xf talloc-2.4.1.tar.gz
+          cd talloc-2.4.1
 
-    if (pid < 0) {
-        LOGE("fork failed: %s", strerror(errno));
-        releaseStrings();
-        return -2;
-    }
+          ./configure \
+            --prefix="$GITHUB_WORKSPACE/talloc-install" \
+            --host="$TARGET" \
+            --disable-python \
+            --disable-rpath \
+            --cross-compile \
+            --cross-execute='/bin/true' \
+            CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="$CFLAGS"
 
-    if (pid == 0) {
-        // Redirect stdout and stderr to log file
-        int fd = open(
-                log,
-                O_WRONLY | O_CREAT | O_TRUNC,
-                0666
-        );
+          make -j"$(nproc)"
+          make install
 
-        if (fd >= 0) {
-            dup2(fd, STDOUT_FILENO);
-            dup2(fd, STDERR_FILENO);
-            close(fd);
-        }
+          echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/talloc-install/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "TALLOC_INSTALL=$GITHUB_WORKSPACE/talloc-install" >> "$GITHUB_ENV"
 
-        // Environment variables
-        setenv("PROOT_TMP_DIR", filesDir, 1);
-        setenv("PROOT_NO_SECURE", "1", 1);
+      - name: Build PRoot and Loader (Android Native)
+        shell: bash
+        run: |
+          set -e
+          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-        setenv("WINEPREFIX", prefix, 1);
-        setenv("WINEDEBUG", "-all", 1);
-        setenv("WINEARCH", "win64", 1);
+          export CC="$NDK/aarch64-linux-android24-clang"
+          export CXX="$NDK/aarch64-linux-android24-clang++"
+          export CPPFLAGS="-I$GITHUB_WORKSPACE/talloc-install/include"
+          export LDFLAGS="-L$GITHUB_WORKSPACE/talloc-install/lib -ltalloc -llog"
 
-        setenv("DISPLAY", ":0", 1);
+          export STRIP="/usr/bin/aarch64-linux-gnu-strip"
+          export OBJCOPY="/usr/bin/aarch64-linux-gnu-objcopy"
+          export OBJDUMP="/usr/bin/aarch64-linux-gnu-objdump"
 
-        // Configure the Termux PRoot Loader (Trampoline) to bypass Android execution limits
-        std::string loaderPath = std::string(nativeDir) + "/libloader.so";
-        setenv("PROOT_LOADER", loaderPath.c_str(), 1);
-        setenv("PROOT_LOADER_64", loaderPath.c_str(), 1);
+          git clone https://github.com/termux/proot.git
+          cd proot/src
 
-        if (setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1) != 0) {
-            dprintf(
-                    STDERR_FILENO,
-                    "Failed to set LD_LIBRARY_PATH: %s\n",
-                    strerror(errno)
-            );
-            _exit(20);
-        }
+          make -j"$(nproc)" \
+            CC="$CC" \
+            STRIP="$STRIP" \
+            OBJCOPY="$OBJCOPY" \
+            OBJDUMP="$OBJDUMP"
 
-        // Verify Proot
-        struct stat st;
-        if (stat(proot, &st) != 0) {
-            dprintf(
-                    STDERR_FILENO,
-                    "Proot not found: %s\n",
-                    strerror(errno)
-            );
-            _exit(11);
-        }
+          test -f proot
 
-        // Verify libtalloc
-        std::string tallocPath =
-                std::string(filesDir) + "/libtalloc.so.2";
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
+          cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
 
-        if (stat(tallocPath.c_str(), &st) != 0) {
-            dprintf(
-                    STDERR_FILENO,
-                    "libtalloc.so.2 not found: %s\n",
-                    strerror(errno)
-            );
-            _exit(13);
-        }
+          if [ -f "loader/loader" ]; then
+            cp loader/loader "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libloader.so"
+          else
+            echo "Warning: loader/loader not found."
+          fi
 
-        dprintf(STDERR_FILENO, "Starting Proot with Native Box64 and Loader Trampoline...\n");
-        dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
-        dprintf(STDERR_FILENO, "Box64 (native): %s\n", box64Src);
-        dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
-        dprintf(STDERR_FILENO, "Wine: %s\n", wine);
+      - name: Build Box64 (Linux Native via Cross-Compile)
+        shell: bash
+        run: |
+          set -e
+          git clone https://github.com/ptitSeb/box64.git
+          cd box64
+          mkdir build && cd build
+          
+          # Android NDK එකෙන් තොරව, සම්මත Linux (glibc) පරිසරයට ගැලපෙන ලෙස ARM64 සඳහා Build කිරීම
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DARM_DYNAREC=ON \
+            -DCMAKE_BUILD_TYPE=Release
+            
+          make -j"$(nproc)"
+          
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
+          cp box64 "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
 
-        // Proot arguments passing Box64 directly; the loader intercepts and handles permissions.
-        char* const argv[] = {
-                (char*)"proot",
-                (char*)"--link2symlink",
-                (char*)"-0",
-                (char*)"-r",
-                (char*)rootfs,
-                (char*)"-b",
-                (char*)"/system",
-                (char*)"-b",
-                (char*)"/apex",
-                (char*)"-b",
-                (char*)"/vendor",
-                (char*)"-b",
-                (char*)"/dev",
-                (char*)"-b",
-                (char*)"/proc",
-                (char*)"-b",
-                (char*)"/sys",
-                (char*)"-b",
-                (char*)"/data",
-                (char*)"-w",
-                (char*)"/",
-                
-                (char*)box64Src,
-                (char*)wine,
-                (char*)installer,
-                nullptr
-        };
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/my-release-key.jks
+          fi
 
-        // Execute Proot
-        execv(proot, argv);
+      - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew 2>/dev/null || true
+          gradle assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/my-release-key.jks \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
 
-        // Only reached if execv fails
-        dprintf(
-                STDERR_FILENO,
-                "Proot execv failed: %s\n",
-                strerror(errno)
-        );
-
-        _exit(12);
-    }
-
-    // Parent process
-    int status = 0;
-    jint result = -3;
-
-    if (waitpid(pid, &status, 0) == -1) {
-        LOGE("waitpid failed: %s", strerror(errno));
-    } else if (WIFEXITED(status)) {
-        int exitCode = WEXITSTATUS(status);
-        LOGI("Proot exit code: %d", exitCode);
-        result = exitCode;
-    } else if (WIFSIGNALED(status)) {
-        int signalNumber = WTERMSIG(status);
-        LOGE("Proot killed by signal: %d", signalNumber);
-        result = -100 - signalNumber;
-    }
-
-    releaseStrings();
-    return result;
-}
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 3
