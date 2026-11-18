@@ -91,6 +91,13 @@ jobs:
           
           echo "✅ New Ubuntu 26.04 Rootfs with Wine created successfully!"
           ls -la rootfs.tzst
+
+      - name: Clean Up Uncompressed Large Files
+        run: |
+          echo "Cleaning up temporary uncompressed files to keep APK size small..."
+          rm -rf app/src/main/assets/temp_rootfs
+          rm -rf app/src/main/assets/ubuntu.tar.gz
+          rm -rf app/src/main/assets/wine.tar.xz
           
       - name: Decode release keystore
         env:
