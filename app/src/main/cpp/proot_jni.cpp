@@ -128,7 +128,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             _exit(13);
         }
 
-        dprintf(STDERR_FILENO, "Starting Proot with Native Box64, Loader Trampoline, and env cleanup...\n");
+        // ලොග් පණිවිඩය වෙනස් කළා (අලුත් කේතය Run වන බව තහවුරු කරගැනීමට)
+        dprintf(STDERR_FILENO, "Starting Proot with Native Box64, Loader Trampoline, and SH env cleanup...\n");
         dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
         dprintf(STDERR_FILENO, "Box64 (Linux): %s\n", box64Src);
         dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
@@ -150,15 +151,14 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"-b", (char*)"/data",
                 (char*)"-w", (char*)"/",
                 
-                // IMPORTANT: Unset Android's LD_LIBRARY_PATH inside the Linux Guest 
-                // so Box64 correctly loads libc.so.6 from the Guest Rootfs instead of Android native dir.
-                (char*)"/usr/bin/env",
-                (char*)"-u",
-                (char*)"LD_LIBRARY_PATH",
-                
-                (char*)box64Src,
-                (char*)wine,
-                (char*)installer,
+                // PRoot ඇතුළත (Guest එකේ) Shell එක භාවිතා කර LD_LIBRARY_PATH ඉවත් කිරීම
+                (char*)"/bin/sh",
+                (char*)"-c",
+                (char*)"unset LD_LIBRARY_PATH && exec \"$@\"",
+                (char*)"sh",      // Shell එකේ $0
+                (char*)box64Src,  // Shell එකේ $1 (Box64)
+                (char*)wine,      // Shell එකේ $2 (Wine)
+                (char*)installer, // Shell එකේ $3 (Installer)
                 nullptr
         };
 
