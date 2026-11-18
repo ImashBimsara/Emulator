@@ -26,110 +26,17 @@ jobs:
         with:
           gradle-version: 8.7
 
-      - name: Install dependencies
+      - name: Extract Pre-compiled Binaries (ZIP Hack)
         run: |
-          sudo apt-get update
-          # gcc-aarch64-linux-gnu සහ g++-aarch64-linux-gnu යොදාගෙන Box64 Linux සඳහා cross-compile කරමු.
-          sudo apt-get install -y \
-            bison flex libtool autoconf automake \
-            pkg-config zip unzip wget git make \
-            binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-aarch64-linux-gnu file cmake
-
-      - name: Download Android NDK
-        run: |
-          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
-          unzip -q android-ndk-r25c-linux.zip -d "$HOME"
-          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> "$GITHUB_ENV"
-
-      - name: Build Talloc (Android Native)
-        shell: bash
-        run: |
-          set -e
-          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          TARGET=aarch64-linux-android
-          API=24
-
-          export CC="$NDK/${TARGET}${API}-clang"
-          export AR="$NDK/llvm-ar"
-          export RANLIB="$NDK/llvm-ranlib"
-          export STRIP="$NDK/llvm-strip"
-          export CFLAGS="-fPIC -D__ANDROID_API__=$API"
-
-          wget -q -O talloc-2.4.1.tar.gz https://ftp.ludd.ltu.se/mirrors/blfs/conglomeration/talloc/talloc-2.4.1.tar.gz
-          tar -xf talloc-2.4.1.tar.gz
-          cd talloc-2.4.1
-
-          ./configure \
-            --prefix="$GITHUB_WORKSPACE/talloc-install" \
-            --host="$TARGET" \
-            --disable-python \
-            --disable-rpath \
-            --cross-compile \
-            --cross-execute='/bin/true' \
-            CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="$CFLAGS"
-
-          make -j"$(nproc)"
-          make install
-
-          echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/talloc-install/lib/pkgconfig" >> "$GITHUB_ENV"
-          echo "TALLOC_INSTALL=$GITHUB_WORKSPACE/talloc-install" >> "$GITHUB_ENV"
-
-      - name: Build PRoot and Loader (Android Native)
-        shell: bash
-        run: |
-          set -e
-          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
-          export CC="$NDK/aarch64-linux-android24-clang"
-          export CXX="$NDK/aarch64-linux-android24-clang++"
-          export CPPFLAGS="-I$GITHUB_WORKSPACE/talloc-install/include"
-          export LDFLAGS="-L$GITHUB_WORKSPACE/talloc-install/lib -ltalloc -llog"
-
-          export STRIP="/usr/bin/aarch64-linux-gnu-strip"
-          export OBJCOPY="/usr/bin/aarch64-linux-gnu-objcopy"
-          export OBJDUMP="/usr/bin/aarch64-linux-gnu-objdump"
-
-          git clone https://github.com/termux/proot.git
-          cd proot/src
-
-          make -j"$(nproc)" \
-            CC="$CC" \
-            STRIP="$STRIP" \
-            OBJCOPY="$OBJCOPY" \
-            OBJDUMP="$OBJDUMP"
-
-          test -f proot
-
-          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
-          cp proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
-
-          if [ -f "loader/loader" ]; then
-            cp loader/loader "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libloader.so"
-          else
-            echo "Warning: loader/loader not found."
-          fi
-
-      - name: Build Box64 (Linux Native via Cross-Compile)
-        shell: bash
-        run: |
-          set -e
-          git clone https://github.com/ptitSeb/box64.git
-          cd box64
-          mkdir build && cd build
+          # ZIP ෆයිල් එක දිගහැරීම
+          cd app/src/main/jniLibs/arm64-v8a/
+          unzip -o libs.zip
           
-          # Android NDK එකෙන් තොරව, සම්මත Linux (glibc) පරිසරයට ගැලපෙන ලෙස ARM64 සඳහා Build කිරීම
-          cmake .. \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-            -DARM_DYNAREC=ON \
-            -DCMAKE_BUILD_TYPE=Release
-            
-          make -j"$(nproc)"
+          # APK එකට ZIP ෆයිල් එක එකතු වීම වැළැක්වීමට එය මකා දැමීම
+          rm libs.zip
           
-          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
-          cp box64 "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
+          # ෆයිල් නිවැරදිව දිගහැරුණාදැයි පරීක්ෂා කිරීම
+          ls -la
 
       - name: Decode release keystore
         env:
