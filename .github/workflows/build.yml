@@ -115,14 +115,29 @@ jobs:
           git clone https://github.com/ptitSeb/box64.git
           cd box64
 
+          # Android API 24 Bionic libc එකේ නැති POSIX functions සඳහා weak stubs එකතු කිරීම.
+          # (__attribute__((weak)) නිසා duplicate symbol errors එන්නේ නැත)
+          cat << 'EOF' >> src/main.c
+
+          /* ===== Android NDK r25c API 24 weak POSIX stubs ===== */
+          __attribute__((weak)) int pthread_attr_getinheritsched(void* attr, int* inheritsched) { return 0; }
+          __attribute__((weak)) int pthread_attr_setinheritsched(void* attr, int inheritsched) { return 0; }
+          __attribute__((weak)) int pthread_mutexattr_getprotocol(void* attr, int* protocol) { return 0; }
+          __attribute__((weak)) int pthread_mutexattr_setprotocol(void* attr, int protocol) { return 0; }
+          __attribute__((weak)) int glob(const char* pattern, int flags, void* errfunc, void* pglob) { return -1; }
+          __attribute__((weak)) void globfree(void* pglob) {}
+          __attribute__((weak)) int posix_spawn(void* pid, const char* path, void* file_actions, void* attrp, void* argv, void* envp) { return -1; }
+          __attribute__((weak)) int posix_spawnp(void* pid, const char* file, void* file_actions, void* attrp, void* argv, void* envp) { return -1; }
+          __attribute__((weak)) int semctl(int semid, int semnum, int cmd, ...) { return -1; }
+          /* ==================================================== */
+          EOF
+
           mkdir build && cd build
 
-          # stubs ඉවත් කළා - box64 එකේ දැනටමත් තියෙනවා
-          # ප්‍රධාන fixes 3 තියෙනවා:
+          # ප්‍රධාන fixes 3:
           #  1) -DBAD_SIGNAL=ON          → Android signal handling
-          #  2) RelWithDebInfo            → -s strip එක ඉවත් කරයි
-          #                                 (මේක තමයි ප්‍රධාන fix එක)
-          #  3) --export-dynamic          → my_* symbols export
+          #  2) RelWithDebInfo            → NDK -s strip එක ඉවත් කරයි
+          #  3) --export-dynamic (-E)     → my_* symbols dynamic table (.dynsym) වෙත export කරයි
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_PLATFORM=android-24 \
@@ -136,27 +151,28 @@ jobs:
           make -j"$(nproc)"
 
           # ----------------------------------------------------------------
-          # වැදගත්: symbols ඇත්තටම binary එකේ තියෙනවද verify කරන්න
+          # වැදගත්: symbols ඇත්තටම dynamic symbol table (.dynsym) එකේ තියෙනවද verify කරන්න
           # ----------------------------------------------------------------
           echo "=== Verifying critical symbols in box64 binary ==="
           echo "--- Looking for __libc_start_main wrappers ---"
-          nm box64 | grep -i "__libc_start_main" || echo "NOT FOUND!"
+          nm -D box64 | grep -i "__libc_start_main" || echo "NOT FOUND!"
 
           echo "--- Looking for my___libc_start_main specifically ---"
-          if nm box64 | grep -q "my___libc_start_main"; then
-            echo "✅ my___libc_start_main FOUND - should work at runtime"
+          if nm -D box64 | grep -q "my___libc_start_main"; then
+            echo "✅ my___libc_start_main FOUND in dynamic table - should work at runtime"
           else
             echo "❌ my___libc_start_main NOT FOUND - will crash at runtime!"
             echo "Symbols with 'libc_start' in name:"
             nm box64 | grep -i "libc_start" || echo "(none)"
           fi
 
-          echo "--- Total exported my_* symbols count ---"
-          nm box64 | grep -c " T my_" || echo "0"
+          echo "--- Total exported my_* dynamic symbols count ---"
+          nm -D box64 | grep -c " T my_" || echo "0"
 
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           cp box64 "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
           ls -la "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libbox64.so"
+
       - name: Decode release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
