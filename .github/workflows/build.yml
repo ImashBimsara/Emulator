@@ -62,14 +62,14 @@ jobs:
           tar -xf ../ubuntu.tar.gz
           
           echo "Fixing Symlinks for Android Extraction..."
-          # Android Extractors absolute paths වලට අකමැති නිසා, ඒවා relative paths බවට පත් කිරීම (-r = recursive, -c = convert)
           symlinks -rc .
           
           mkdir -p tmp
           chmod 1777 tmp
           
           echo "Compressing back to rootfs.tzst..."
-          tar -I 'zstd -19' -cf ../rootfs.tzst .
+          # Android Extractor එකට ගැටලුවක් නොවන ලෙස Hard links සාමාන්‍ය ෆයිල්ස් බවට පත් කිරීම (--hard-dereference)
+          tar --hard-dereference -I 'zstd -19' -cf ../rootfs.tzst .
           
           cd ..
           rm -rf temp_rootfs ubuntu.tar.gz
