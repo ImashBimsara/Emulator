@@ -47,8 +47,19 @@ jobs:
           # පරණ වැඩකට නැති rootfs එකක් ඇත්නම් එය මකා දැමීම
           rm -f rootfs.tzst
           
-          echo "Downloading official Ubuntu 24.04 ARM64 Base..."
-          wget -q http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.1-base-arm64.tar.gz -O ubuntu.tar.gz
+          echo "Finding the latest Ubuntu 24.04 ARM64 Base image..."
+          BASE_URL="http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release"
+          
+          # සර්වර් එකේ තියෙන අලුත්ම වර්ෂන් එක ස්වයංක්‍රීයව සොයාගැනීම (උදා: 24.04.5)
+          FILE_NAME=$(curl -sL "$BASE_URL/" | grep -oE 'ubuntu-base-24\.04\.[0-9]+-base-arm64\.tar\.gz' | head -n 1)
+          
+          if [ -z "$FILE_NAME" ]; then
+            echo "Error: Could not find the base image on Ubuntu servers."
+            exit 1
+          fi
+          
+          echo "Downloading $FILE_NAME..."
+          wget -q "$BASE_URL/$FILE_NAME" -O ubuntu.tar.gz
           
           echo "Extracting and converting to rootfs.tzst..."
           mkdir temp_rootfs && cd temp_rootfs
