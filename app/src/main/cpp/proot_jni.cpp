@@ -43,7 +43,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     const char* nativeDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
     const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
 
-    // Release helper
     auto releaseStrings = [&]() {
         if (proot) env->ReleaseStringUTFChars(jProotLibPath, proot);
         if (rootfs) env->ReleaseStringUTFChars(jRootfs, rootfs);
@@ -56,7 +55,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         if (filesDir) env->ReleaseStringUTFChars(jFilesDir, filesDir);
     };
 
-    // Validate JNI strings
     if (!proot || !rootfs || !prefix || !box64Src ||
         !wine || !installer || !log || !nativeDir || !filesDir) {
         LOGE("JNI string conversion failed");
@@ -64,14 +62,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         return -1;
     }
 
-    // Create library search path for PRoot to find libtalloc on the Android host
-    std::string ldPath =
-            std::string(filesDir) + ":" +
-            std::string(nativeDir);
-
+    std::string ldPath = std::string(filesDir) + ":" + std::string(nativeDir);
     LOGI("LD_LIBRARY_PATH: %s", ldPath.c_str());
 
-    // Fork process
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -81,49 +74,40 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
     }
 
     if (pid == 0) {
-        // Redirect stdout and stderr to log file
-        int fd = open(
-                log,
-                O_WRONLY | O_CREAT | O_TRUNC,
-                0666
-        );
-
+        int fd = open(log, O_WRONLY | O_CREAT | O_TRUNC, 0666);
         if (fd >= 0) {
             dup2(fd, STDOUT_FILENO);
             dup2(fd, STDERR_FILENO);
             close(fd);
         }
 
-        // Environment variables
         setenv("PROOT_TMP_DIR", filesDir, 1);
         setenv("PROOT_NO_SECURE", "1", 1);
-
         setenv("WINEPREFIX", prefix, 1);
         setenv("WINEDEBUG", "-all", 1);
-        
-        // Wow64 හරහා 32-bit සහ 64-bit මෘදුකාංග දෙකම ක්‍රියාත්මක කිරීමට WINEARCH ඉවත් කිරීම හෝ win64 ලෙස තැබීම
-        setenv("WINEARCH", "win64", 1); 
+        setenv("WINEARCH", "win64", 1);
         setenv("DISPLAY", ":0", 1);
 
-        // Configure the Termux PRoot Loader (Trampoline) to bypass Android execution limits
+        // --- අලුත් කොටස: Box64 සඳහා Wine ෆයිල්ස් පෙන්වා දීම ---
+        setenv("BOX64_PATH", "/opt/wine/bin", 1);
+        setenv("BOX64_LD_LIBRARY_PATH", "/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/opt/wine/lib/wine/i386-unix", 1);
+        setenv("BOX64_LOG", "1", 1); // Box64 හි ගැටලු හඳුනාගැනීම පහසු කිරීමට Log ක්‍රියාත්මක කිරීම
+
         std::string loaderPath = std::string(nativeDir) + "/libloader.so";
         setenv("PROOT_LOADER", loaderPath.c_str(), 1);
         setenv("PROOT_LOADER_64", loaderPath.c_str(), 1);
 
-        // Set LD_LIBRARY_PATH for the host (so PRoot finds libtalloc.so.2)
         if (setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1) != 0) {
             dprintf(STDERR_FILENO, "Failed to set LD_LIBRARY_PATH: %s\n", strerror(errno));
             _exit(20);
         }
 
-        // Verify Proot
         struct stat st;
         if (stat(proot, &st) != 0) {
             dprintf(STDERR_FILENO, "Proot not found: %s\n", strerror(errno));
             _exit(11);
         }
 
-        // Verify libtalloc
         std::string tallocPath = std::string(filesDir) + "/libtalloc.so.2";
         if (stat(tallocPath.c_str(), &st) != 0) {
             dprintf(STDERR_FILENO, "libtalloc.so.2 not found: %s\n", strerror(errno));
@@ -136,13 +120,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
         dprintf(STDERR_FILENO, "Wine (WoW64): %s\n", wine);
 
-        // Proot arguments
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
                 (char*)"-0",
-                (char*)"-r",
-                (char*)rootfs,
+                (char*)"-r", (char*)rootfs,
                 (char*)"-b", (char*)"/system",
                 (char*)"-b", (char*)"/apex",
                 (char*)"-b", (char*)"/vendor",
@@ -152,29 +134,22 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"-b", (char*)"/data",
                 (char*)"-w", (char*)"/",
                 
-                // ඇන්ඩ්‍රොයිඩ් Shell එක හරහා Guest ලිනක්ස් හි Library Paths නිවැරදිව ලබා දීම
                 (char*)"/system/bin/sh",
                 (char*)"-c",
-                (char*)"export LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"",
-                (char*)"sh",      // Shell එකේ $0
-                (char*)box64Src,  // Shell එකේ $1 (Box64)
-                
-                // Wine 32-bit Crash වීම වැළැක්වීම සඳහා 64-bit Wine ක්‍රියාත්මක කිරීම
-                (char*)"/opt/wine/bin/wine64", // Shell එකේ $2 (Wine64)
-                
-                (char*)installer, // Shell එකේ $3 (Installer)
+                // Wine හි Library Paths ද මෙහි ඇතුළත් කර ඇත
+                (char*)"export LD_LIBRARY_PATH=/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"",
+                (char*)"sh",      
+                (char*)box64Src,  
+                (char*)"/opt/wine/bin/wine64", 
+                (char*)installer, 
                 nullptr
         };
         
-        // Execute Proot
         execv(proot, argv);
-
-        // Only reached if execv fails
         dprintf(STDERR_FILENO, "Proot execv failed: %s\n", strerror(errno));
         _exit(12);
     }
 
-    // Parent process
     int status = 0;
     jint result = -3;
 
