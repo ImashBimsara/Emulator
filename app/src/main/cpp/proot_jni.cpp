@@ -128,8 +128,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             _exit(13);
         }
 
-        // ලොග් පණිවිඩය වෙනස් කළා (අලුත් කේතය Run වන බව තහවුරු කරගැනීමට)
-        dprintf(STDERR_FILENO, "Starting Proot with Native Box64, Loader Trampoline, and SH env cleanup...\n");
+        // ලොග් පණිවිඩය වෙනස් කළා
+        dprintf(STDERR_FILENO, "Starting Proot with Native Box64, Loader Trampoline, and Android System SH env cleanup...\n");
         dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
         dprintf(STDERR_FILENO, "Box64 (Linux): %s\n", box64Src);
         dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
@@ -151,8 +151,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"-b", (char*)"/data",
                 (char*)"-w", (char*)"/",
                 
-                // PRoot ඇතුළත (Guest එකේ) Shell එක භාවිතා කර LD_LIBRARY_PATH ඉවත් කිරීම
-                (char*)"/bin/sh",
+                // ඇන්ඩ්‍රොයිඩ් හි ස්ථිරව පවතින Shell එක භාවිතයෙන් LD_LIBRARY_PATH ඉවත් කිරීම
+                (char*)"/system/bin/sh",
                 (char*)"-c",
                 (char*)"unset LD_LIBRARY_PATH && exec \"$@\"",
                 (char*)"sh",      // Shell එකේ $0
@@ -161,7 +161,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)installer, // Shell එකේ $3 (Installer)
                 nullptr
         };
-
         // Execute Proot
         execv(proot, argv);
 
