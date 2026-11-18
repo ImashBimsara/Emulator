@@ -136,6 +136,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         dprintf(STDERR_FILENO, "Wine: %s\n", wine);
 
         // Proot arguments
+        // Proot arguments
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
@@ -151,10 +152,10 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"-b", (char*)"/data",
                 (char*)"-w", (char*)"/",
                 
-                // ඇන්ඩ්‍රොයිඩ් හි ස්ථිරව පවතින Shell එක භාවිතයෙන් LD_LIBRARY_PATH ඉවත් කිරීම
+                // ඇන්ඩ්‍රොයිඩ් Shell එක හරහා Guest ලිනක්ස් හි Library Paths නිවැරදිව ලබා දීම
                 (char*)"/system/bin/sh",
                 (char*)"-c",
-                (char*)"unset LD_LIBRARY_PATH && exec \"$@\"",
+                (char*)"export LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"",
                 (char*)"sh",      // Shell එකේ $0
                 (char*)box64Src,  // Shell එකේ $1 (Box64)
                 (char*)wine,      // Shell එකේ $2 (Wine)
