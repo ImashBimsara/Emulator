@@ -64,7 +64,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         return -1;
     }
 
-    // Create library search path
+    // Create library search path for PRoot to find libtalloc on the Android host
     std::string ldPath =
             std::string(filesDir) + ":" +
             std::string(nativeDir);
@@ -101,7 +101,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         setenv("WINEPREFIX", prefix, 1);
         setenv("WINEDEBUG", "-all", 1);
         setenv("WINEARCH", "win64", 1);
-
         setenv("DISPLAY", ":0", 1);
 
         // Configure the Termux PRoot Loader (Trampoline) to bypass Android execution limits
@@ -109,68 +108,53 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         setenv("PROOT_LOADER", loaderPath.c_str(), 1);
         setenv("PROOT_LOADER_64", loaderPath.c_str(), 1);
 
+        // Set LD_LIBRARY_PATH for the host (so PRoot finds libtalloc.so.2)
         if (setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1) != 0) {
-            dprintf(
-                    STDERR_FILENO,
-                    "Failed to set LD_LIBRARY_PATH: %s\n",
-                    strerror(errno)
-            );
+            dprintf(STDERR_FILENO, "Failed to set LD_LIBRARY_PATH: %s\n", strerror(errno));
             _exit(20);
         }
 
         // Verify Proot
         struct stat st;
         if (stat(proot, &st) != 0) {
-            dprintf(
-                    STDERR_FILENO,
-                    "Proot not found: %s\n",
-                    strerror(errno)
-            );
+            dprintf(STDERR_FILENO, "Proot not found: %s\n", strerror(errno));
             _exit(11);
         }
 
         // Verify libtalloc
-        std::string tallocPath =
-                std::string(filesDir) + "/libtalloc.so.2";
-
+        std::string tallocPath = std::string(filesDir) + "/libtalloc.so.2";
         if (stat(tallocPath.c_str(), &st) != 0) {
-            dprintf(
-                    STDERR_FILENO,
-                    "libtalloc.so.2 not found: %s\n",
-                    strerror(errno)
-            );
+            dprintf(STDERR_FILENO, "libtalloc.so.2 not found: %s\n", strerror(errno));
             _exit(13);
         }
 
-        dprintf(STDERR_FILENO, "Starting Proot with Native Box64 and Loader Trampoline...\n");
+        dprintf(STDERR_FILENO, "Starting Proot with Native Box64, Loader Trampoline, and env cleanup...\n");
         dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
-        dprintf(STDERR_FILENO, "Box64 (native): %s\n", box64Src);
+        dprintf(STDERR_FILENO, "Box64 (Linux): %s\n", box64Src);
         dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
         dprintf(STDERR_FILENO, "Wine: %s\n", wine);
 
-        // Proot arguments passing Box64 directly; the loader intercepts and handles permissions.
+        // Proot arguments
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
                 (char*)"-0",
                 (char*)"-r",
                 (char*)rootfs,
-                (char*)"-b",
-                (char*)"/system",
-                (char*)"-b",
-                (char*)"/apex",
-                (char*)"-b",
-                (char*)"/vendor",
-                (char*)"-b",
-                (char*)"/dev",
-                (char*)"-b",
-                (char*)"/proc",
-                (char*)"-b",
-                (char*)"/sys",
-                (char*)"-b",
-                (char*)"/data",
-                (char*)"-w",
-                (char*)"/",
+                (char*)"-b", (char*)"/system",
+                (char*)"-b", (char*)"/apex",
+                (char*)"-b", (char*)"/vendor",
+                (char*)"-b", (char*)"/dev",
+                (char*)"-b", (char*)"/proc",
+                (char*)"-b", (char*)"/sys",
+                (char*)"-b", (char*)"/data",
+                (char*)"-w", (char*)"/",
+                
+                // IMPORTANT: Unset Android's LD_LIBRARY_PATH inside the Linux Guest 
+                // so Box64 correctly loads libc.so.6 from the Guest Rootfs instead of Android native dir.
+                (char*)"/usr/bin/env",
+                (char*)"-u",
+                (char*)"LD_LIBRARY_PATH",
                 
                 (char*)box64Src,
                 (char*)wine,
@@ -182,12 +166,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         execv(proot, argv);
 
         // Only reached if execv fails
-        dprintf(
-                STDERR_FILENO,
-                "Proot execv failed: %s\n",
-                strerror(errno)
-        );
-
+        dprintf(STDERR_FILENO, "Proot execv failed: %s\n", strerror(errno));
         _exit(12);
     }
 
