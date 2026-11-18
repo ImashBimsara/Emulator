@@ -1,47 +1,96 @@
-name: Build Compatible Box64
+name: Build Android APK with Official Ubuntu Rootfs
 
 on:
   push:
     branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
-  build-box64:
+  build:
     runs-on: ubuntu-latest
-    container: ubuntu:20.04  # අලුත් සර්වර් එක ඇතුලේ පරණ 20.04 පරිසරයක් නිර්මාණය කිරීම
 
     steps:
-      - name: Install dependencies
-        run: |
-          apt-get update
-          # Container එක ඇතුළේ ප්‍රශ්නයක් නැතිවෙන්න අත්‍යවශ්‍ය දේවල් මුලින්ම දාමු
-          DEBIAN_FRONTEND=noninteractive apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake make git tar
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build Box64 (Linux Native via Cross-Compile)
-        run: |
-          git clone https://github.com/ptitSeb/box64.git
-          cd box64
-          mkdir build && cd build
-          
-          cmake .. \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-            -DARM_DYNAREC=ON \
-            -DCMAKE_BUILD_TYPE=Release
-            
-          make -j"$(nproc)"
-          
-          mkdir -p "$GITHUB_WORKSPACE/output"
-          cp box64 "$GITHUB_WORKSPACE/output/libbox64.so"
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-      - name: Upload libbox64.so
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Extract Pre-compiled Binaries (ZIP Hack)
+        run: |
+          # ඔයා Upload කරපු libs.zip එකෙන් Box64 සහ PRoot එළියට ගැනීම
+          cd app/src/main/jniLibs/arm64-v8a/
+          if [ -f libs.zip ]; then
+            unzip -o libs.zip
+            rm libs.zip
+          fi
+
+      - name: Build Official Ubuntu 24.04 ARM64 Rootfs
+        run: |
+          # Zstd සම්පීඩක මෘදුකාංගය ස්ථාපනය කිරීම
+          sudo apt-get install -y zstd
+
+          # සාමාන්‍යයෙන් rootfs.tzst ෆයිල් එක තියෙන Assets ෆෝල්ඩරයට යාම
+          mkdir -p app/src/main/assets
+          cd app/src/main/assets
+          
+          # පරණ වැඩකට නැති rootfs එකක් ඇත්නම් එය මකා දැමීම
+          rm -f rootfs.tzst
+          
+          echo "Downloading official Ubuntu 24.04 ARM64 Base..."
+          wget -q http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.1-base-arm64.tar.gz -O ubuntu.tar.gz
+          
+          echo "Extracting and converting to rootfs.tzst..."
+          mkdir temp_rootfs && cd temp_rootfs
+          tar -xf ../ubuntu.tar.gz
+          
+          # අනාගතයේදී Graphics වැඩසටහන් වලට අවශ්‍ය වන /tmp ෆෝල්ඩරය නිවැරදිව සැකසීම
+          mkdir -p tmp
+          chmod 1777 tmp
+          
+          # Emulator එකට අවශ්‍ය Zstandard (tzst) ආකෘතියට නැවත පැකේජ් කිරීම
+          tar -I 'zstd -19' -cf ../rootfs.tzst .
+          
+          cd ..
+          rm -rf temp_rootfs ubuntu.tar.gz
+          
+          echo "✅ New Ubuntu Rootfs created successfully!"
+          ls -la rootfs.tzst
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/my-release-key.jks
+          fi
+
+      - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew 2>/dev/null || true
+          gradle assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/my-release-key.jks \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: compatible-libbox64
-          path: output/libbox64.so
-          retention-days: 1
+          name: emulator-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 3
