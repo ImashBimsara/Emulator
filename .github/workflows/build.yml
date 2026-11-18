@@ -7,16 +7,18 @@ on:
 
 jobs:
   build-box64:
-    runs-on: ubuntu-20.04  # පරණ Rootfs එකට ගැලපෙන ලෙස Ubuntu 20.04 භාවිතා කිරීම
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04  # අලුත් සර්වර් එක ඇතුලේ පරණ 20.04 පරිසරයක් නිර්මාණය කිරීම
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake make git
+          apt-get update
+          # Container එක ඇතුළේ ප්‍රශ්නයක් නැතිවෙන්න අත්‍යවශ්‍ය දේවල් මුලින්ම දාමු
+          DEBIAN_FRONTEND=noninteractive apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake make git tar
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Build Box64 (Linux Native via Cross-Compile)
         run: |
