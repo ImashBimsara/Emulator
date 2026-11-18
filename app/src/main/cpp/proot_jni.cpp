@@ -100,7 +100,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         setenv("WINEPREFIX", prefix, 1);
         setenv("WINEDEBUG", "-all", 1);
-        setenv("WINEARCH", "win64", 1);
+        
+        // Wow64 හරහා 32-bit සහ 64-bit මෘදුකාංග දෙකම ක්‍රියාත්මක කිරීමට WINEARCH ඉවත් කිරීම හෝ win64 ලෙස තැබීම
+        setenv("WINEARCH", "win64", 1); 
         setenv("DISPLAY", ":0", 1);
 
         // Configure the Termux PRoot Loader (Trampoline) to bypass Android execution limits
@@ -128,14 +130,12 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
             _exit(13);
         }
 
-        // ලොග් පණිවිඩය වෙනස් කළා
         dprintf(STDERR_FILENO, "Starting Proot with Native Box64, Loader Trampoline, and Android System SH env cleanup...\n");
         dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
         dprintf(STDERR_FILENO, "Box64 (Linux): %s\n", box64Src);
         dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
-        dprintf(STDERR_FILENO, "Wine: %s\n", wine);
+        dprintf(STDERR_FILENO, "Wine (WoW64): %s\n", wine);
 
-        // Proot arguments
         // Proot arguments
         char* const argv[] = {
                 (char*)"proot",
@@ -158,10 +158,14 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 (char*)"export LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"",
                 (char*)"sh",      // Shell එකේ $0
                 (char*)box64Src,  // Shell එකේ $1 (Box64)
-                (char*)wine,      // Shell එකේ $2 (Wine)
+                
+                // Wine 32-bit Crash වීම වැළැක්වීම සඳහා 64-bit Wine ක්‍රියාත්මක කිරීම
+                (char*)"/opt/wine/bin/wine64", // Shell එකේ $2 (Wine64)
+                
                 (char*)installer, // Shell එකේ $3 (Installer)
                 nullptr
         };
+        
         // Execute Proot
         execv(proot, argv);
 
