@@ -37,39 +37,38 @@ jobs:
 
       - name: Build Official Ubuntu 24.04 ARM64 Rootfs
         run: |
-          # Zstd සම්පීඩක මෘදුකාංගය ස්ථාපනය කිරීම
-          sudo apt-get install -y zstd
+          # Zstd සහ symlinks මෘදුකාංග ස්ථාපනය කිරීම
+          sudo apt-get update
+          sudo apt-get install -y zstd symlinks
 
-          # සාමාන්‍යයෙන් rootfs.tzst ෆයිල් එක තියෙන Assets ෆෝල්ඩරයට යාම
           mkdir -p app/src/main/assets
           cd app/src/main/assets
-          
-          # පරණ වැඩකට නැති rootfs එකක් ඇත්නම් එය මකා දැමීම
           rm -f rootfs.tzst
           
           echo "Finding the latest Ubuntu 24.04 ARM64 Base image..."
           BASE_URL="http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release"
-          
-          # සර්වර් එකේ තියෙන අලුත්ම වර්ෂන් එක ස්වයංක්‍රීයව සොයාගැනීම (උදා: 24.04.5)
           FILE_NAME=$(curl -sL "$BASE_URL/" | grep -oE 'ubuntu-base-24\.04\.[0-9]+-base-arm64\.tar\.gz' | head -n 1)
           
           if [ -z "$FILE_NAME" ]; then
-            echo "Error: Could not find the base image on Ubuntu servers."
+            echo "Error: Could not find the base image."
             exit 1
           fi
           
           echo "Downloading $FILE_NAME..."
           wget -q "$BASE_URL/$FILE_NAME" -O ubuntu.tar.gz
           
-          echo "Extracting and converting to rootfs.tzst..."
+          echo "Extracting..."
           mkdir temp_rootfs && cd temp_rootfs
           tar -xf ../ubuntu.tar.gz
           
-          # අනාගතයේදී Graphics වැඩසටහන් වලට අවශ්‍ය වන /tmp ෆෝල්ඩරය නිවැරදිව සැකසීම
+          echo "Fixing Symlinks for Android Extraction..."
+          # Android Extractors absolute paths වලට අකමැති නිසා, ඒවා relative paths බවට පත් කිරීම (-r = recursive, -c = convert)
+          symlinks -rc .
+          
           mkdir -p tmp
           chmod 1777 tmp
           
-          # Emulator එකට අවශ්‍ය Zstandard (tzst) ආකෘතියට නැවත පැකේජ් කිරීම
+          echo "Compressing back to rootfs.tzst..."
           tar -I 'zstd -19' -cf ../rootfs.tzst .
           
           cd ..
@@ -77,7 +76,7 @@ jobs:
           
           echo "✅ New Ubuntu Rootfs created successfully!"
           ls -la rootfs.tzst
-
+          
       - name: Decode release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
