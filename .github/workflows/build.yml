@@ -35,7 +35,7 @@ jobs:
             rm libs.zip
           fi
 
-      - name: Build Official Ubuntu 24.04 ARM64 Rootfs with Wine
+      - name: Build Official Ubuntu 26.04 ARM64 Rootfs with Wine
         run: |
           sudo apt-get update
           sudo apt-get install -y zstd
@@ -44,16 +44,17 @@ jobs:
           cd app/src/main/assets
           rm -f rootfs.tzst
           
-          echo "Finding the latest Ubuntu 24.04 ARM64 Base image..."
-          BASE_URL="http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release"
-          FILE_NAME=$(curl -sL "$BASE_URL/" | grep -oE 'ubuntu-base-24\.04\.[0-9]+-base-arm64\.tar\.gz' | head -n 1)
+          echo "Finding the latest Ubuntu 26.04 ARM64 Base image..."
+          BASE_URL="http://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release"
+          # Ubuntu 26.04 සඳහා ගැලපෙන ලෙස නම සොයාගැනීම
+          FILE_NAME=$(curl -sL "$BASE_URL/" | grep -oE 'ubuntu-base-26\.04(\.[0-9]+)?-base-arm64\.tar\.gz' | head -n 1)
           
           if [ -z "$FILE_NAME" ]; then
             echo "Error: Could not find the base image."
             exit 1
           fi
           
-          echo "Downloading Ubuntu Base..."
+          echo "Downloading $FILE_NAME..."
           wget -q "$BASE_URL/$FILE_NAME" -O ubuntu.tar.gz
           
           echo "Extracting Ubuntu Base..."
@@ -61,7 +62,6 @@ jobs:
           tar -xf ../ubuntu.tar.gz
           
           echo "Downloading and Installing Wine (x86_64) for Box64..."
-          # Box64 හරහා ධාවනය කිරීම සඳහා Kron4ek විසින් සකසන ලද Wine බාගත කර අදාළ ෆෝල්ඩරයට සැකසීම
           wget -q "https://github.com/Kron4ek/Wine-Builds/releases/download/9.0/wine-9.0-amd64.tar.xz" -O ../wine.tar.xz
           mkdir -p opt
           tar -xf ../wine.tar.xz -C opt/
@@ -84,7 +84,7 @@ jobs:
           cd ..
           rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
           
-          echo "✅ New Ubuntu Rootfs with Wine created successfully!"
+          echo "✅ New Ubuntu 26.04 Rootfs with Wine created successfully!"
           ls -la rootfs.tzst
           
       - name: Decode release keystore
