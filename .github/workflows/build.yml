@@ -38,7 +38,7 @@ jobs:
       - name: Build Official Ubuntu 26.04 ARM64 Rootfs with Wine
         run: |
           sudo apt-get update
-          sudo apt-get install -y zstd
+          sudo apt-get install -y zstd qemu-user-static
 
           mkdir -p app/src/main/assets
           cd app/src/main/assets
@@ -46,7 +46,6 @@ jobs:
           
           echo "Finding the latest Ubuntu 26.04 ARM64 Base image..."
           BASE_URL="http://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release"
-          # Ubuntu 26.04 සඳහා ගැලපෙන ලෙස නම සොයාගැනීම
           FILE_NAME=$(curl -sL "$BASE_URL/" | grep -oE 'ubuntu-base-26\.04(\.[0-9]+)?-base-arm64\.tar\.gz' | head -n 1)
           
           if [ -z "$FILE_NAME" ]; then
@@ -61,13 +60,20 @@ jobs:
           mkdir temp_rootfs && cd temp_rootfs
           tar -xf ../ubuntu.tar.gz
           
+          # [අලුත් කොටස] Wine සඳහා අවශ්‍ය වන libgcc_s.so.1 ඇතුළු අමතර C/C++ ලයිබ්‍රරි ස්ථාපනය කිරීම
+          echo "Installing essential GCC libraries into the ARM64 Rootfs..."
+          sudo cp /usr/bin/qemu-aarch64-static usr/bin/
+          sudo cp /etc/resolv.conf etc/resolv.conf
+          sudo chroot . /bin/sh -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y gcc-13-base libgcc-s1 libc6 && apt-get clean"
+          sudo rm -f usr/bin/qemu-aarch64-static etc/resolv.conf
+          
           echo "Downloading and Installing Wine (x86_64) for Box64..."
           wget -q "https://github.com/Kron4ek/Wine-Builds/releases/download/9.0/wine-9.0-amd64.tar.xz" -O ../wine.tar.xz
           mkdir -p opt
           tar -xf ../wine.tar.xz -C opt/
           mv opt/wine-9.0-amd64 opt/wine
           
-          # [අලුත් කොටස] Box64 සඳහා 64-bit Wine ක්‍රියාත්මක කිරීමට සැකසීම
+          # Box64 සඳහා 64-bit Wine ක්‍රියාත්මක කිරීමට සැකසීම
           echo "Fixing Wine 32-bit Crash by symlinking 64-bit Wine..."
           rm -f opt/wine/bin/wine
           ln -s wine64 opt/wine/bin/wine
