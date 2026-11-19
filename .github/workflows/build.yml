@@ -38,7 +38,7 @@ jobs:
       - name: Build Official Ubuntu 26.04 ARM64 Rootfs with Wine
         run: |
           sudo apt-get update
-          sudo apt-get install -y zstd qemu-user-static
+          sudo apt-get install -y zstd
 
           mkdir -p app/src/main/assets
           cd app/src/main/assets
@@ -60,12 +60,29 @@ jobs:
           mkdir temp_rootfs && cd temp_rootfs
           tar -xf ../ubuntu.tar.gz
           
-          # [අලුත් කොටස] Wine සඳහා අවශ්‍ය වන libgcc_s.so.1 ඇතුළු අමතර C/C++ ලයිබ්‍රරි ස්ථාපනය කිරීම
-          echo "Installing essential GCC libraries into the ARM64 Rootfs..."
-          sudo cp /usr/bin/qemu-aarch64-static usr/bin/
-          sudo cp /etc/resolv.conf etc/resolv.conf
-          sudo chroot . /bin/sh -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y gcc-13-base libgcc-s1 libc6 && apt-get clean"
-          sudo rm -f usr/bin/qemu-aarch64-static etc/resolv.conf
+          # [අලුත් කොටස] QEMU/chroot ගැටලුව මඟහැර සෘජුවම libgcc_s.so.1 Rootfs එකට ඇතුළත් කිරීම
+          echo "Fetching missing libgcc_s.so.1 directly (Bypassing QEMU)..."
+          mkdir -p temp_deb && cd temp_deb
+          wget -q "http://ports.ubuntu.com/pool/main/g/gcc-14/" -O gcc.html || true
+          GCC_URL=$(grep -oE 'libgcc-s1_14[^"]*_arm64\.deb' gcc.html | head -n 1)
+          if [ -n "$GCC_URL" ]; then
+              wget -q "http://ports.ubuntu.com/pool/main/g/gcc-14/$GCC_URL" -O libgcc.deb
+          else
+              wget -q "http://ports.ubuntu.com/pool/main/g/gcc-13/" -O gcc.html
+              GCC_URL=$(grep -oE 'libgcc-s1_13[^"]*_arm64\.deb' gcc.html | head -n 1)
+              wget -q "http://ports.ubuntu.com/pool/main/g/gcc-13/$GCC_URL" -O libgcc.deb
+          fi
+          
+          if [ -f libgcc.deb ]; then
+              dpkg -x libgcc.deb extract
+              # සොයාගත් libgcc_s.so.1 ගොනුව අපගේ ARM64 Rootfs එකට කොපි කිරීම
+              find extract -name "libgcc_s.so.1" -exec cp {} ../temp_rootfs/usr/lib/aarch64-linux-gnu/ \;
+              echo "Successfully added libgcc_s.so.1 to rootfs!"
+          else
+              echo "Warning: Failed to fetch libgcc_s.so.1!"
+          fi
+          cd ..
+          rm -rf temp_deb
           
           echo "Downloading and Installing Wine (x86_64) for Box64..."
           wget -q "https://github.com/Kron4ek/Wine-Builds/releases/download/9.0/wine-9.0-amd64.tar.xz" -O ../wine.tar.xz
@@ -73,7 +90,6 @@ jobs:
           tar -xf ../wine.tar.xz -C opt/
           mv opt/wine-9.0-amd64 opt/wine
           
-          # Box64 සඳහා 64-bit Wine ක්‍රියාත්මක කිරීමට සැකසීම
           echo "Fixing Wine 32-bit Crash by symlinking 64-bit Wine..."
           rm -f opt/wine/bin/wine
           ln -s wine64 opt/wine/bin/wine
@@ -96,7 +112,6 @@ jobs:
           rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
           
           echo "✅ New Ubuntu 26.04 Rootfs with Wine created successfully!"
-          ls -la rootfs.tzst
 
       - name: Clean Up Uncompressed Large Files
         run: |
