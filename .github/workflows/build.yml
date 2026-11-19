@@ -61,18 +61,18 @@ jobs:
           
           echo "Extracting Ubuntu Base..."
           mkdir temp_rootfs && cd temp_rootfs
-          tar -xf ../ubuntu.tar.gz
+          sudo tar -xf ../ubuntu.tar.gz
           
           echo "Downloading and Installing Wine (x86_64) for Box64..."
           wget -q "https://github.com/Kron4ek/Wine-Builds/releases/download/9.0/wine-9.0-amd64.tar.xz" -O ../wine.tar.xz
-          mkdir -p opt
-          tar -xf ../wine.tar.xz -C opt/
-          mv opt/wine-9.0-amd64 opt/wine
+          sudo mkdir -p opt
+          sudo tar -xf ../wine.tar.xz -C opt/
+          sudo mv opt/wine-9.0-amd64 opt/wine
           
           echo "Installing essential C++ and X11 graphics libraries via apt inside Rootfs..."
           sudo cp /etc/resolv.conf etc/resolv.conf
           
-          # [අලුත් කොටස] gpgv දෝෂය (Signature verification) මඟහැරීමට Mock Script එකක් යෙදීම
+          # gpgv දෝෂය මඟහැරීමට Mock Script එකක් යෙදීම
           sudo cp usr/bin/gpgv usr/bin/gpgv.bak 2>/dev/null || true
           sudo bash -c 'echo -e "#!/bin/sh\nexit 0" > usr/bin/gpgv'
           sudo chmod +x usr/bin/gpgv
@@ -90,8 +90,12 @@ jobs:
           "
           
           # Mock කල gpgv ඉවත් කිරීම
-          sudo mv usr/bin/gpgv.bak usr/bin/gpgv 2>/dev/null || rm -f usr/bin/gpgv
+          sudo mv usr/bin/gpgv.bak usr/bin/gpgv 2>/dev/null || sudo rm -f usr/bin/gpgv
           sudo rm -f etc/resolv.conf
+          
+          # [අලුත් කොටස] අලුතින් Install වූ ගොනු සඳහා අවසර (Permissions) නිවැරදි කිරීම
+          echo "Fixing permissions for the runner user..."
+          sudo chown -R $(whoami):$(whoami) .
           
           echo "Fixing Wine 32-bit Crash by symlinking 64-bit Wine..."
           rm -f opt/wine/bin/wine
@@ -112,7 +116,7 @@ jobs:
           tar --hard-dereference -I 'zstd -19' -cf ../rootfs.tzst .
           
           cd ..
-          rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
+          sudo rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
           
           echo "✅ New Ubuntu 26.04 Rootfs with Wine created successfully!"
 
