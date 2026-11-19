@@ -1,4 +1,3 @@
-
 package com.your.customemulator
 
 import android.content.Context
@@ -47,14 +46,13 @@ object AssetExtractor {
                 File(destDir, "rootfs")
             )
 
-            // 3. Extract rootfs patches
-            Logger.log(context, "Extracting rootfs_patches.tzst...")
-
-            extractTzst(
-                context,
-                "rootfs_patches.tzst",
-                File(destDir, "rootfs_patches")
-            )
+            // 3. Extract rootfs patches (අප විසින් APK Size එක අඩු කිරීමට මෙම ගොනුව මකා දැමූ බැවින්, මෙය Extract වීම නවතා ඇත)
+            // Logger.log(context, "Extracting rootfs_patches.tzst...")
+            // extractTzst(
+            //     context,
+            //     "rootfs_patches.tzst",
+            //     File(destDir, "rootfs_patches")
+            // )
 
             val rootfs = File(destDir, "rootfs")
 
@@ -85,15 +83,11 @@ object AssetExtractor {
 
             /*
              * IMPORTANT:
-             *
              * Do not delete rootfs/lib.
-             *
              * The original rootfs contains:
              * /lib -> usr/lib
-             *
              * The guest linker already exists at:
              * /usr/lib/ld-linux-aarch64.so.1
-             *
              * Therefore /lib/ld-linux-aarch64.so.1
              * resolves through the existing symbolic link.
              */
