@@ -60,34 +60,23 @@ jobs:
           mkdir temp_rootfs && cd temp_rootfs
           tar -xf ../ubuntu.tar.gz
           
-          # [අලුත් සහතික කළ කොටස] GitHub Action සර්වර් එකෙන්ම කෙලින්ම ලයිබ්‍රරි ලබාගැනීම
-          echo "Copying essential GCC libraries directly from the GitHub runner..."
-          
-          # GitHub Action සර්වර් එකේ (Ubuntu) තියෙන ලයිබ්‍රරි ඩිරෙක්ටරියෙන් අවශ්‍ය ගොනු සොයා ගැනීම
-          HOST_LIBGCC=$(find /usr/lib -name "libgcc_s.so.1" -type f | head -n 1)
-          HOST_LIBSTDC=$(find /usr/lib -name "libstdc++.so.6" -type f | head -n 1)
-          
-          if [ -n "$HOST_LIBGCC" ]; then
-              echo "Found libgcc_s.so.1 at $HOST_LIBGCC, copying to rootfs..."
-              cp "$HOST_LIBGCC" usr/lib/aarch64-linux-gnu/
-          else
-              echo "Warning: libgcc_s.so.1 not found on host!"
-          fi
-          
-          if [ -n "$HOST_LIBSTDC" ]; then
-              echo "Found libstdc++.so.6 at $HOST_LIBSTDC, copying to rootfs..."
-              cp "$HOST_LIBSTDC" usr/lib/aarch64-linux-gnu/
-          else
-              echo "Warning: libstdc++.so.6 not found on host!"
-          fi
-          
-          cd ..
-          
           echo "Downloading and Installing Wine (x86_64) for Box64..."
           wget -q "https://github.com/Kron4ek/Wine-Builds/releases/download/9.0/wine-9.0-amd64.tar.xz" -O ../wine.tar.xz
           mkdir -p opt
           tar -xf ../wine.tar.xz -C opt/
           mv opt/wine-9.0-amd64 opt/wine
+          
+          echo "Copying essential x86_64 libraries directly from the GitHub runner for Wine..."
+          for lib in libgcc_s.so.1 libstdc++.so.6; do
+              # සර්වර් එකේ ඇති 64-bit ලයිබ්‍රරි සෙවීම සහ Wine වෙත ලබාදීම
+              HOST_LIB=$(find /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu -name "$lib" -type f 2>/dev/null | head -n 1)
+              if [ -n "$HOST_LIB" ]; then
+                  cp "$HOST_LIB" opt/wine/lib/
+                  echo "Copied $lib to Wine libs."
+              else
+                  echo "Warning: $lib not found on host!"
+              fi
+          done
           
           echo "Fixing Wine 32-bit Crash by symlinking 64-bit Wine..."
           rm -f opt/wine/bin/wine
@@ -105,8 +94,10 @@ jobs:
           chmod 1777 tmp
           
           echo "Compressing back to rootfs.tzst..."
+          # මෙවර අනිවාර්යයෙන්ම rootfs.tzst සෑදෙන්නේ assets ෆෝල්ඩරයේයි
           tar --hard-dereference -I 'zstd -19' -cf ../rootfs.tzst .
           
+          # දැන් temp_rootfs වෙතින් පිටතට පැමිණීම (cd .. තිබිය යුත්තේ මෙතැනයි)
           cd ..
           rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
           
