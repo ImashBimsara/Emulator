@@ -60,29 +60,28 @@ jobs:
           mkdir temp_rootfs && cd temp_rootfs
           tar -xf ../ubuntu.tar.gz
           
-          # [අලුත් කොටස] QEMU/chroot ගැටලුව මඟහැර සෘජුවම libgcc_s.so.1 Rootfs එකට ඇතුළත් කිරීම
-          echo "Fetching missing libgcc_s.so.1 directly (Bypassing QEMU)..."
-          mkdir -p temp_deb && cd temp_deb
-          wget -q "http://ports.ubuntu.com/pool/main/g/gcc-14/" -O gcc.html || true
-          GCC_URL=$(grep -oE 'libgcc-s1_14[^"]*_arm64\.deb' gcc.html | head -n 1)
-          if [ -n "$GCC_URL" ]; then
-              wget -q "http://ports.ubuntu.com/pool/main/g/gcc-14/$GCC_URL" -O libgcc.deb
+          # [අලුත් සහතික කළ කොටස] GitHub Action සර්වර් එකෙන්ම කෙලින්ම ලයිබ්‍රරි ලබාගැනීම
+          echo "Copying essential GCC libraries directly from the GitHub runner..."
+          
+          # GitHub Action සර්වර් එකේ (Ubuntu) තියෙන ලයිබ්‍රරි ඩිරෙක්ටරියෙන් අවශ්‍ය ගොනු සොයා ගැනීම
+          HOST_LIBGCC=$(find /usr/lib -name "libgcc_s.so.1" -type f | head -n 1)
+          HOST_LIBSTDC=$(find /usr/lib -name "libstdc++.so.6" -type f | head -n 1)
+          
+          if [ -n "$HOST_LIBGCC" ]; then
+              echo "Found libgcc_s.so.1 at $HOST_LIBGCC, copying to rootfs..."
+              cp "$HOST_LIBGCC" usr/lib/aarch64-linux-gnu/
           else
-              wget -q "http://ports.ubuntu.com/pool/main/g/gcc-13/" -O gcc.html
-              GCC_URL=$(grep -oE 'libgcc-s1_13[^"]*_arm64\.deb' gcc.html | head -n 1)
-              wget -q "http://ports.ubuntu.com/pool/main/g/gcc-13/$GCC_URL" -O libgcc.deb
+              echo "Warning: libgcc_s.so.1 not found on host!"
           fi
           
-          if [ -f libgcc.deb ]; then
-              dpkg -x libgcc.deb extract
-              # සොයාගත් libgcc_s.so.1 ගොනුව අපගේ ARM64 Rootfs එකට කොපි කිරීම
-              find extract -name "libgcc_s.so.1" -exec cp {} ../temp_rootfs/usr/lib/aarch64-linux-gnu/ \;
-              echo "Successfully added libgcc_s.so.1 to rootfs!"
+          if [ -n "$HOST_LIBSTDC" ]; then
+              echo "Found libstdc++.so.6 at $HOST_LIBSTDC, copying to rootfs..."
+              cp "$HOST_LIBSTDC" usr/lib/aarch64-linux-gnu/
           else
-              echo "Warning: Failed to fetch libgcc_s.so.1!"
+              echo "Warning: libstdc++.so.6 not found on host!"
           fi
+          
           cd ..
-          rm -rf temp_deb
           
           echo "Downloading and Installing Wine (x86_64) for Box64..."
           wget -q "https://github.com/Kron4ek/Wine-Builds/releases/download/9.0/wine-9.0-amd64.tar.xz" -O ../wine.tar.xz
@@ -112,7 +111,7 @@ jobs:
           rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
           
           echo "✅ New Ubuntu 26.04 Rootfs with Wine created successfully!"
-
+          
       - name: Clean Up Uncompressed Large Files
         run: |
           echo "Cleaning up temporary uncompressed files to keep APK size small..."
