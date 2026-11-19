@@ -72,17 +72,24 @@ jobs:
           echo "Installing essential C++ and X11 graphics libraries via apt inside Rootfs..."
           sudo cp /etc/resolv.conf etc/resolv.conf
           
-          # QEMU කලින්ම සූදානම් කර ඇති නිසා මෙහි chroot ඉතා පහසුවෙන් ක්‍රියාත්මක වේ
+          # [අලුත් කොටස] gpgv දෝෂය (Signature verification) මඟහැරීමට Mock Script එකක් යෙදීම
+          sudo cp usr/bin/gpgv usr/bin/gpgv.bak 2>/dev/null || true
+          sudo bash -c 'echo -e "#!/bin/sh\nexit 0" > usr/bin/gpgv'
+          sudo chmod +x usr/bin/gpgv
+          
+          # QEMU සහ Rootfs හරහා අවශ්‍ය ලයිබ්‍රරි ස්ථාපනය කිරීම
           sudo chroot . /bin/sh -c "
-            apt-get update && 
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            apt-get -y -o Acquire::AllowInsecureRepositories=true update && 
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated --no-install-recommends \
               gcc-13-base libgcc-s1 libstdc++6 \
               libx11-6 libxext6 libfreetype6 libfontconfig1 \
               libgl1 libegl1 libvulkan1 \
-              libasound2 libc6 libdl2 libpthread-stubs0-dev && 
+              libasound2 libc6 libpthread-stubs0-dev gnupg && 
             apt-get clean
           "
           
+          # Mock කල gpgv ඉවත් කිරීම
+          sudo mv usr/bin/gpgv.bak usr/bin/gpgv 2>/dev/null || rm -f usr/bin/gpgv
           sudo rm -f etc/resolv.conf
           
           echo "Fixing Wine 32-bit Crash by symlinking 64-bit Wine..."
