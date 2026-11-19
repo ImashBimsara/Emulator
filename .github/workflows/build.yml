@@ -41,7 +41,7 @@ jobs:
       - name: Build Official Ubuntu 26.04 ARM64 Rootfs with Wine
         run: |
           sudo apt-get update
-          sudo apt-get install -y zstd
+          sudo apt-get install -y zstd curl xz-utils
 
           mkdir -p app/src/main/assets
           cd app/src/main/assets
@@ -69,31 +69,27 @@ jobs:
           sudo tar -xf ../wine.tar.xz -C opt/
           sudo mv opt/wine-9.0-amd64 opt/wine
           
-          echo "Installing essential C++ and X11 graphics libraries via apt inside Rootfs..."
-          sudo cp /etc/resolv.conf etc/resolv.conf
+          # [අලුත් සහ වඩාත් සාර්ථක ක්‍රමය] සර්වර් එකේ ඇති සියලුම x86_64 ලයිබ්‍රරි සෘජුවම Wine ෆෝල්ඩරයට යැවීම
+          echo "Directly copying x86_64 libraries into Wine's internal library paths..."
           
-          # gpgv දෝෂය මඟහැරීමට Mock Script එකක් යෙදීම
-          sudo cp usr/bin/gpgv usr/bin/gpgv.bak 2>/dev/null || true
-          sudo bash -c 'echo -e "#!/bin/sh\nexit 0" > usr/bin/gpgv'
-          sudo chmod +x usr/bin/gpgv
+          # Box64 සහ Wine විසින් සොයන ප්‍රධාන ඩිරෙක්ටරි සෑදීම
+          sudo mkdir -p opt/wine/lib/wine/x86_64-unix/
           
-          # QEMU සහ Rootfs හරහා අවශ්‍ය ලයිබ්‍රරි ස්ථාපනය කිරීම
-          sudo chroot . /bin/sh -c "
-            apt-get -y -o Acquire::AllowInsecureRepositories=true update && 
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated --no-install-recommends \
-              gcc-13-base libgcc-s1 libstdc++6 \
-              libx11-6 libxext6 libfreetype6 libfontconfig1 \
-              libgl1 libegl1 libvulkan1 \
-              libasound2t64 libc6 libpthread-stubs0-dev \
-              gnupg x11-utils xwayland && 
-            apt-get clean
-          "
+          LIBS="libgcc_s.so.1 libstdc++.so.6 libm.so.6 libc.so.6 libdl.so.2 libpthread.so.0 libutil.so.1 librt.so.1 libbsd.so.0"
           
-          # Mock කල gpgv ඉවත් කිරීම
-          sudo mv usr/bin/gpgv.bak usr/bin/gpgv 2>/dev/null || sudo rm -f usr/bin/gpgv
-          sudo rm -f etc/resolv.conf
+          for lib in $LIBS; do
+              HOST_LIB=$(find /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /usr/lib /lib -name "$lib" -type f -o -type l 2>/dev/null | head -n 1)
+              if [ -n "$HOST_LIB" ]; then
+                  # ලයිබ්‍රරි එක opt/wine/lib සහ opt/wine/lib/wine/x86_64-unix යන ස්ථාන දෙකටම කොපි කිරීම
+                  sudo cp "$HOST_LIB" opt/wine/lib/
+                  sudo cp "$HOST_LIB" opt/wine/lib/wine/x86_64-unix/
+                  echo "Successfully copied $lib to Wine directories."
+              else
+                  echo "Warning: $lib not found on host runner!"
+              fi
+          done
           
-          # [අලුත් කොටස] අලුතින් Install වූ ගොනු සඳහා අවසර (Permissions) නිවැරදි කිරීම
+          # අලුතින් Install වූ ගොනු සඳහා අවසර (Permissions) නිවැරදි කිරීම
           echo "Fixing permissions for the runner user..."
           sudo chown -R $(whoami):$(whoami) .
           
