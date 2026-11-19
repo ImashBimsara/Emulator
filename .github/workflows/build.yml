@@ -66,13 +66,15 @@ jobs:
           tar -xf ../wine.tar.xz -C opt/
           mv opt/wine-9.0-amd64 opt/wine
           
-          echo "Copying essential x86_64 libraries directly from the GitHub runner for Wine..."
-          for lib in libgcc_s.so.1 libstdc++.so.6; do
-              # සර්වර් එකේ ඇති 64-bit ලයිබ්‍රරි සෙවීම සහ Wine වෙත ලබාදීම
-              HOST_LIB=$(find /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu -name "$lib" -type f 2>/dev/null | head -n 1)
+          echo "Copying essential C++ and X11 graphics libraries for Wine..."
+          # Wine සඳහා අත්‍යවශ්‍ය වන ලයිබ්‍රරි ලැයිස්තුව
+          LIBS="libgcc_s.so.1 libstdc++.so.6 libX11.so.6 libfreetype.so.6 libXext.so.6 libz.so.1 libm.so.6 libc.so.6 libdl.so.2 libpthread.so.0 libxcb.so.1 libXau.so.6 libXdmcp.so.6"
+          
+          for lib in $LIBS; do
+              HOST_LIB=$(find /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /usr/lib /lib -name "$lib" -type f 2>/dev/null | head -n 1)
               if [ -n "$HOST_LIB" ]; then
                   cp "$HOST_LIB" opt/wine/lib/
-                  echo "Copied $lib to Wine libs."
+                  echo "Copied $lib"
               else
                   echo "Warning: $lib not found on host!"
               fi
@@ -94,10 +96,8 @@ jobs:
           chmod 1777 tmp
           
           echo "Compressing back to rootfs.tzst..."
-          # මෙවර අනිවාර්යයෙන්ම rootfs.tzst සෑදෙන්නේ assets ෆෝල්ඩරයේයි
           tar --hard-dereference -I 'zstd -19' -cf ../rootfs.tzst .
           
-          # දැන් temp_rootfs වෙතින් පිටතට පැමිණීම (cd .. තිබිය යුත්තේ මෙතැනයි)
           cd ..
           rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
           
