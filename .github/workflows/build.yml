@@ -84,7 +84,8 @@ jobs:
               gcc-13-base libgcc-s1 libstdc++6 \
               libx11-6 libxext6 libfreetype6 libfontconfig1 \
               libgl1 libegl1 libvulkan1 \
-              libasound2 libc6 libpthread-stubs0-dev gnupg && 
+              libasound2t64 libc6 libpthread-stubs0-dev \
+              gnupg x11-utils xwayland && 
             apt-get clean
           "
           
