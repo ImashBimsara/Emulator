@@ -26,9 +26,12 @@ jobs:
         with:
           gradle-version: 8.7
 
+      # [අලුත් කොටස] GitHub Actions නිල QEMU සේවාව ආරම්භ කිරීම
+      - name: Set up QEMU for ARM64 Emulation
+        uses: docker/setup-qemu-action@v3
+
       - name: Extract Pre-compiled Binaries (ZIP Hack)
         run: |
-          # ඔයා Upload කරපු libs.zip එකෙන් Box64 සහ PRoot එළියට ගැනීම
           cd app/src/main/jniLibs/arm64-v8a/
           if [ -f libs.zip ]; then
             unzip -o libs.zip
@@ -38,7 +41,7 @@ jobs:
       - name: Build Official Ubuntu 26.04 ARM64 Rootfs with Wine
         run: |
           sudo apt-get update
-          sudo apt-get install -y zstd qemu-user-static
+          sudo apt-get install -y zstd
 
           mkdir -p app/src/main/assets
           cd app/src/main/assets
@@ -66,14 +69,10 @@ jobs:
           tar -xf ../wine.tar.xz -C opt/
           mv opt/wine-9.0-amd64 opt/wine
           
-          # [අලුත් කොටස] Rootfs එක ඇතුළටම ගොස් X11 සහ Wine Dependencies නිල වශයෙන් ස්ථාපනය කිරීම
           echo "Installing essential C++ and X11 graphics libraries via apt inside Rootfs..."
-          
-          # QEMU සහ අත්‍යවශ්‍ය ලිපිගොනු Rootfs වෙත යැවීම
-          sudo cp /usr/bin/qemu-aarch64-static usr/bin/
           sudo cp /etc/resolv.conf etc/resolv.conf
           
-          # chroot හරහා apt කමාන්ඩ්ස් ක්‍රියාත්මක කර අත්‍යවශ්‍ය පැකේජ් ස්ථාපනය කිරීම
+          # QEMU කලින්ම සූදානම් කර ඇති නිසා මෙහි chroot ඉතා පහසුවෙන් ක්‍රියාත්මක වේ
           sudo chroot . /bin/sh -c "
             apt-get update && 
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -84,8 +83,7 @@ jobs:
             apt-get clean
           "
           
-          # QEMU සහ තාවකාලික ලිපිගොනු ඉවත් කිරීම
-          sudo rm -f usr/bin/qemu-aarch64-static etc/resolv.conf
+          sudo rm -f etc/resolv.conf
           
           echo "Fixing Wine 32-bit Crash by symlinking 64-bit Wine..."
           rm -f opt/wine/bin/wine
@@ -109,7 +107,7 @@ jobs:
           rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
           
           echo "✅ New Ubuntu 26.04 Rootfs with Wine created successfully!"
-          
+
       - name: Clean Up Uncompressed Large Files
         run: |
           echo "Cleaning up temporary uncompressed files to keep APK size small..."
