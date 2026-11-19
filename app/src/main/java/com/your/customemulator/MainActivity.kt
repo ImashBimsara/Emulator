@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -23,6 +25,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
+
+    // X11 Display සඳහා අවශ්‍ය SurfaceView එක
+    private lateinit var surfaceView: SurfaceView
 
     companion object {
         init {
@@ -48,9 +53,29 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // activity_main.xml හි <SurfaceView> අනිවාර්යයෙන්ම තිබිය යුතුය
         setContentView(R.layout.activity_main)
 
         Logger.clearLog(this)
+
+        // 1. SurfaceView එක සකස් කිරීම
+        surfaceView = findViewById(R.id.emulatorSurfaceView)
+        surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                Logger.log(this@MainActivity, "Surface created successfully! Ready for X11 rendering.")
+                // ඊළඟ අදියරේදී JNI හරහා Surface එක C++ වෙත යවමු
+            }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                Logger.log(this@MainActivity, "Surface size changed to: ${width}x${height}")
+            }
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                Logger.log(this@MainActivity, "Surface destroyed.")
+            }
+        })
+
+        // 2. Native Environment (Rootfs extraction) ආරම්භ කිරීම
         setupNativeEnvironment()
 
         val btnSelectGame = findViewById<Button>(R.id.btnSelectGame)
@@ -210,7 +235,7 @@ class MainActivity : AppCompatActivity() {
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibPath = File(nativeLibDir, "libproot.so").absolutePath
                 
-                // ✅ Box64 එකේ host path එක (nativeLibraryDir)
+                // Box64 host path
                 val box64HostPath = File(nativeLibDir, "libbox64.so").absolutePath
                 
                 val internalInstaller = File(rootfsDir, "home/xuser/installer.exe")
@@ -250,7 +275,7 @@ class MainActivity : AppCompatActivity() {
                     prootLibPath, 
                     rootfsDir, 
                     winePrefixHostPath, 
-                    box64HostPath, // ✅ host path එක යවනවා
+                    box64HostPath, 
                     wineInternalPath, 
                     installerInternalPath,
                     logFilePath,
