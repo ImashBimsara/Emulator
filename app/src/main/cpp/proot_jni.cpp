@@ -95,6 +95,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         setenv("DISPLAY", ":0", 1);
 
         setenv("BOX64_PATH", "/opt/wine/bin", 1);
+
+        setenv("BOX64_NOSIGSEGV", "1", 1);
+        setenv("WINEPRELOADRESERVE", "0x7ffffff40000-0x7fffffff0000", 1);
         
         // අලුතින් extract කරපු /usr/lib/x86_64-linux-gnu path එකත් මෙතැනට එකතු කර ඇත
         setenv("BOX64_LD_LIBRARY_PATH", "/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/opt/wine/lib/wine/i386-unix", 1);
