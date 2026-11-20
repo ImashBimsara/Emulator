@@ -83,15 +83,24 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         setenv("PROOT_TMP_DIR", filesDir, 1);
         setenv("PROOT_NO_SECURE", "1", 1);
-        setenv("WINEPREFIX", prefix, 1);
+        
+        // --- අලුත් වෙනස්කම් (c0000135 Fix එක සඳහා) ---
+        // Android Host path එක වෙනුවට PRoot Guest path එකක් Wineprefix ලෙස සකසමු
+        setenv("WINEPREFIX", "/root/.wine", 1); 
+        
         setenv("WINEDEBUG", "-all", 1);
         setenv("WINEARCH", "win64", 1);
         setenv("DISPLAY", ":0", 1);
 
-        // --- අලුත් කොටස: Box64 සඳහා Wine ෆයිල්ස් පෙන්වා දීම ---
         setenv("BOX64_PATH", "/opt/wine/bin", 1);
-        setenv("BOX64_LD_LIBRARY_PATH", "/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/opt/wine/lib/wine/i386-unix", 1);
-        setenv("BOX64_LOG", "1", 1); // Box64 හි ගැටලු හඳුනාගැනීම පහසු කිරීමට Log ක්‍රියාත්මක කිරීම
+        
+        // අලුතින් extract කරපු /usr/lib/x86_64-linux-gnu path එකත් මෙතැනට එකතු කර ඇත
+        setenv("BOX64_LD_LIBRARY_PATH", "/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/opt/wine/lib/wine/i386-unix", 1);
+        
+        // Wine වලට Windows DLL (.dll files) හොයාගැනීම සඳහා අනිවාර්ය Path එක 
+        setenv("WINEDLLPATH", "/opt/wine/lib/wine/x86_64-windows:/opt/wine/lib/wine/i386-windows", 1);
+        
+        setenv("BOX64_LOG", "1", 1);
 
         std::string loaderPath = std::string(nativeDir) + "/libloader.so";
         setenv("PROOT_LOADER", loaderPath.c_str(), 1);
@@ -136,8 +145,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 
                 (char*)"/system/bin/sh",
                 (char*)"-c",
-                // Wine හි Library Paths ද මෙහි ඇතුළත් කර ඇත
-                (char*)"export LD_LIBRARY_PATH=/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"",
+                // Shell එක ඇතුලේ LD_LIBRARY_PATH එකට අලුත් path එකත් එකතු කළා
+                (char*)"export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"",
                 (char*)"sh",      
                 (char*)box64Src,  
                 (char*)"/opt/wine/bin/wine64", 
