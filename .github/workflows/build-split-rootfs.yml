@@ -1,0 +1,41 @@
+name: Download x86_64 Libraries (libgcc_s & libstdc++)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/get-x86-libs.yml"
+
+jobs:
+  fetch-libs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download x86_64 libgcc_s.so.1 and libstdc++.so.6
+        run: |
+          mkdir -p /tmp/libs_work/extracted /tmp/libs_out
+          cd /tmp/libs_work
+
+          sudo dpkg --add-architecture amd64
+          sudo apt-get update
+          apt-get download libgcc-s1:amd64 libstdc++6:amd64
+
+          for deb in *.deb; do
+            dpkg-deb -x "$deb" extracted/
+          done
+
+          find extracted/ -name "libgcc_s.so.1" -exec cp -L {} /tmp/libs_out/ \;
+          find extracted/ -name "libstdc++.so.6*" -exec cp -L {} /tmp/libs_out/ \;
+
+          ls -lh /tmp/libs_out/
+
+          sudo apt-get install -y zip
+          cd /tmp/libs_out
+          zip -r "$GITHUB_WORKSPACE/x86_64_libs.zip" ./*
+
+      - name: Upload Libraries Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-libs-zip
+          path: x86_64_libs.zip
+          retention-days: 7
