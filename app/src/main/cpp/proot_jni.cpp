@@ -88,7 +88,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         // Android Host path එක වෙනුවට PRoot Guest path එකක් Wineprefix ලෙස සකසමු
         setenv("WINEPREFIX", "/root/.wine", 1); 
         
-        setenv("WINEDEBUG", "-all", 1);
+        // DLL loading logs සහ Errors සක්‍රිය කිරීම (-all වෙනුවට)
+        setenv("WINEDEBUG", "err+module,warn+module,+loaddll", 1);
+        
         setenv("WINEARCH", "win64", 1);
         setenv("DISPLAY", ":0", 1);
 
