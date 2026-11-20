@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
+import java.util.zip.ZipInputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -65,11 +66,49 @@ class MainActivity : AppCompatActivity() {
         setupNativeEnvironment()
     }
 
+    private fun extractExtraX86Libs(rootfsDir: File) {
+        val libsZipName = "x86_64_libs.zip"
+        val availableAssets = assets.list("") ?: emptyArray()
+        if (!availableAssets.contains(libsZipName)) {
+            return
+        }
+
+        Logger.log(this, "Found $libsZipName in assets. Extracting x86_64 libraries...")
+        val targetDirs = listOf(
+            File(rootfsDir, "opt/wine/lib"),
+            File(rootfsDir, "opt/wine/lib/wine/x86_64-unix")
+        )
+
+        targetDirs.forEach { dir ->
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+            assets.open(libsZipName).use { inputStream ->
+                ZipInputStream(inputStream).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory) {
+                            val cleanName = File(entry.name).name
+                            val outFile = File(dir, cleanName)
+                            outFile.outputStream().use { output ->
+                                zip.copyTo(output)
+                            }
+                            outFile.setReadable(true, false)
+                            Logger.log(this, "Extracted $cleanName -> ${dir.path}")
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
+                    }
+                }
+            }
+        }
+    }
+
     private fun setupNativeEnvironment() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 Logger.log(this@MainActivity, "App started. Checking files...")
-                
+
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "Checking files...", Toast.LENGTH_SHORT).show()
                 }
@@ -97,32 +136,32 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 AssetExtractor.extractAssets(this@MainActivity)
-                
-                Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
+
                 val rootfsDir = File(imagefsDir, "rootfs")
+                extractExtraX86Libs(rootfsDir)
+
+                Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
-                
+
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val box64File = File(nativeLibDir, "libbox64.so")
                 val prootLibFile = File(nativeLibDir, "libproot.so")
-                
+
                 Logger.log(this@MainActivity, "Wine exists: ${wineFile.exists()}")
                 Logger.log(this@MainActivity, "Box64 (lib) exists: ${box64File.exists()}")
                 Logger.log(this@MainActivity, "Proot (lib) exists: ${prootLibFile.exists()}")
-                
+
                 withContext(Dispatchers.Main) {
                     val allReady = wineFile.exists() && box64File.exists() && prootLibFile.exists()
                     if (allReady) {
                         Toast.makeText(this@MainActivity, "SUCCESS! Starting Wine Automatically...", Toast.LENGTH_LONG).show()
-                        
+
                         // 3. Extract වීම සාර්ථක වූ වහාම Wine ආරම්භ කිරීම
                         startWineAutomatically()
-                        
                     } else {
                         Toast.makeText(this@MainActivity, "Extraction done but some files are missing. Check log.", Toast.LENGTH_LONG).show()
                     }
                 }
-
             } catch (e: Exception) {
                 Logger.log(this@MainActivity, "CRASH ERROR: ${e.message}")
                 e.stackTrace.forEach { element ->
@@ -140,22 +179,24 @@ class MainActivity : AppCompatActivity() {
             try {
                 val imagefsDir = File(filesDir, "imagefs").absolutePath
                 val rootfsDir = File(imagefsDir, "rootfs").absolutePath
-                
+
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val prootLibPath = File(nativeLibDir, "libproot.so").absolutePath
                 val box64HostPath = File(nativeLibDir, "libbox64.so").absolutePath
-                
+
                 val wineInternalPath = "/opt/wine/bin/wine"
-                
+
                 // දැනට Installer එකක් නැති නිසා, Wine එකේ Default Explorer එක හෝ Wineboot ධාවනය කරමු
                 val installerInternalPath = "c:\\windows\\system32\\wineboot.exe"
-                
+
                 val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
-                val logFilePath = File(filesDir, "wine_output.log").absolutePath
-    
+                val publicDir = getExternalFilesDir(null) ?: filesDir
+                val logFilePath = File(publicDir, "wine_output.log").absolutePath
+
                 Logger.log(this, "=== Starting Wine Automatically via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
                 Logger.log(this, "Box64 Host Path: $box64HostPath")
+                Logger.log(this, "Wine Output Log: $logFilePath")
 
                 // DIAGNOSTIC LOGS
                 val box64FullPath = File(box64HostPath)
@@ -170,22 +211,22 @@ class MainActivity : AppCompatActivity() {
                         Logger.log(this, "❌ Error reading box64 bytes: ${e.message}")
                     }
                 }
-    
+
                 // C++ වෙත දත්ත යැවීම
                 val result = runProotJNI(
-                    prootLibPath, 
-                    rootfsDir, 
-                    winePrefixHostPath, 
-                    box64HostPath, 
-                    wineInternalPath, 
+                    prootLibPath,
+                    rootfsDir,
+                    winePrefixHostPath,
+                    box64HostPath,
+                    wineInternalPath,
                     installerInternalPath,
                     logFilePath,
                     nativeLibDir,
-                    filesDir.absolutePath 
+                    filesDir.absolutePath
                 )
-                
+
                 Logger.log(this, "JNI returned: $result")
-                
+
                 val wineOutputFile = File(logFilePath)
                 if (wineOutputFile.exists()) {
                     Logger.log(this, "=== Wine Output ===")
@@ -193,7 +234,7 @@ class MainActivity : AppCompatActivity() {
                         Logger.log(this, "WINE_OUTPUT: $line")
                     }
                 }
-                
+
                 runOnUiThread {
                     Toast.makeText(this, "Wine execution finished. Check log.", Toast.LENGTH_LONG).show()
                 }
