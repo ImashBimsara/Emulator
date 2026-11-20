@@ -36,41 +36,27 @@ jobs:
             unzip -o libs.zip
             rm libs.zip
           fi
-
-      - name: Rebuild Rootfs with WoW64 Wine on Cloud
+      
+      - name: Merge Rootfs Parts into Assets
         run: |
-          echo "Installing zstd..."
-          sudo apt-get update && sudo apt-get install -y zstd
+          echo "Merging rootfs parts from app/src/main/assets/rootfs_parts..."
+          PARTS_DIR="app/src/main/assets/rootfs_parts"
+          OUT_FILE="app/src/main/assets/rootfs.tzst"
 
-          echo "1. Merging existing rootfs parts..."
-          cat app/src/main/assets/rootfs_parts/rootfs.tzst.part* > /tmp/old_rootfs.tzst
+          rm -f "$OUT_FILE"
 
-          echo "2. Extracting old rootfs..."
-          mkdir /tmp/rootfs_work
-          cd /tmp/rootfs_work
-          tar -I zstd -xf /tmp/old_rootfs.tzst
+          if ls "$PARTS_DIR"/rootfs.tzst.part* 1> /dev/null 2>&1; then
+            cat "$PARTS_DIR"/rootfs.tzst.part* > "$OUT_FILE"
+            echo "Rootfs merged successfully!"
+            ls -lh "$OUT_FILE"
 
-          echo "3. Removing old 64-bit Wine and downloading WoW64 Wine..."
-          rm -rf opt/wine
-          wget -q "https://github.com/Kron4ek/Wine-Builds/releases/download/9.0/wine-9.0-amd64-x86.tar.xz" -O wine.tar.xz
-          
-          echo "4. Extracting WoW64 Wine into rootfs..."
-          mkdir -p opt
-          tar -xf wine.tar.xz -C opt/
-          mv opt/wine-9.0-amd64-x86 opt/wine
-          rm wine.tar.xz
-          
-          # Wine 32-bit Crash එකට විසඳුමක් විදිහට Symlink එක හරිගැස්සීම
-          rm -f opt/wine/bin/wine
-          ln -s wine64 opt/wine/bin/wine
-
-          echo "5. Re-compressing into new rootfs.tzst..."
-          tar -I 'zstd -19' -cf $GITHUB_WORKSPACE/app/src/main/assets/rootfs.tzst .
-
-          echo "6. Cleaning up old parts from assets to save APK size..."
-          rm -rf $GITHUB_WORKSPACE/app/src/main/assets/rootfs_parts
-          
-          echo "✅ Rootfs successfully upgraded to WoW64!"
+            # APK එකේ Size එක වැඩි වීම වැළැක්වීමට parts ෆෝල්ඩරය assets වලින් ඉවත් කිරීම
+            rm -rf "$PARTS_DIR"
+            echo "Removed temporary rootfs_parts from assets."
+          else
+            echo "❌ ERROR: No part files found in $PARTS_DIR!"
+            exit 1
+          fi
 
       - name: Decode release keystore
         env:
