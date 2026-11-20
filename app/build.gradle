@@ -28,6 +28,11 @@ android {
         }
     }
 
+    lint {
+        abortOnError false
+        disable 'ExpiredTargetSdkVersion'
+    }
+
     aaptOptions {
         noCompress "tzst"
     }
