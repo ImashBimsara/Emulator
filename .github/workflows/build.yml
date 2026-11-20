@@ -1,4 +1,4 @@
-name: Build Android APK with Official Ubuntu Rootfs
+name: Build Android APK with Split Rootfs
 
 on:
   push:
@@ -26,7 +26,6 @@ jobs:
         with:
           gradle-version: 8.7
 
-      # [අලුත් කොටස] GitHub Actions නිල QEMU සේවාව ආරම්භ කිරීම
       - name: Set up QEMU for ARM64 Emulation
         uses: docker/setup-qemu-action@v3
 
@@ -38,91 +37,18 @@ jobs:
             rm libs.zip
           fi
 
-      - name: Build Official Ubuntu 26.04 ARM64 Rootfs with Wine
+      - name: Merge Rootfs Parts into Assets
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zstd curl xz-utils
-
+          echo "Preparing assets directory..."
           mkdir -p app/src/main/assets
-          cd app/src/main/assets
-          rm -f rootfs.tzst
-          
-          echo "Finding the latest Ubuntu 26.04 ARM64 Base image..."
-          BASE_URL="http://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release"
-          FILE_NAME=$(curl -sL "$BASE_URL/" | grep -oE 'ubuntu-base-26\.04(\.[0-9]+)?-base-arm64\.tar\.gz' | head -n 1)
-          
-          if [ -z "$FILE_NAME" ]; then
-            echo "Error: Could not find the base image."
-            exit 1
-          fi
-          
-          echo "Downloading $FILE_NAME..."
-          wget -q "$BASE_URL/$FILE_NAME" -O ubuntu.tar.gz
-          
-          echo "Extracting Ubuntu Base..."
-          mkdir temp_rootfs && cd temp_rootfs
-          sudo tar -xf ../ubuntu.tar.gz
-          
-          echo "Downloading and Installing Wine (x86_64) for Box64..."
-          wget -q "https://github.com/Kron4ek/Wine-Builds/releases/download/9.0/wine-9.0-amd64.tar.xz" -O ../wine.tar.xz
-          sudo mkdir -p opt
-          sudo tar -xf ../wine.tar.xz -C opt/
-          sudo mv opt/wine-9.0-amd64 opt/wine
-          
-          # [අලුත් සහ වඩාත් සාර්ථක ක්‍රමය] සර්වර් එකේ ඇති සියලුම x86_64 ලයිබ්‍රරි සෘජුවම Wine ෆෝල්ඩරයට යැවීම
-          echo "Directly copying x86_64 libraries into Wine's internal library paths..."
-          
-          # Box64 සහ Wine විසින් සොයන ප්‍රධාන ඩිරෙක්ටරි සෑදීම
-          sudo mkdir -p opt/wine/lib/wine/x86_64-unix/
-          
-          LIBS="libgcc_s.so.1 libstdc++.so.6 libm.so.6 libc.so.6 libdl.so.2 libpthread.so.0 libutil.so.1 librt.so.1 libbsd.so.0"
-          
-          for lib in $LIBS; do
-              HOST_LIB=$(find /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /usr/lib /lib -name "$lib" -type f -o -type l 2>/dev/null | head -n 1)
-              if [ -n "$HOST_LIB" ]; then
-                  # ලයිබ්‍රරි එක opt/wine/lib සහ opt/wine/lib/wine/x86_64-unix යන ස්ථාන දෙකටම කොපි කිරීම
-                  sudo cp "$HOST_LIB" opt/wine/lib/
-                  sudo cp "$HOST_LIB" opt/wine/lib/wine/x86_64-unix/
-                  echo "Successfully copied $lib to Wine directories."
-              else
-                  echo "Warning: $lib not found on host runner!"
-              fi
-          done
-          
-          # අලුතින් Install වූ ගොනු සඳහා අවසර (Permissions) නිවැරදි කිරීම
-          echo "Fixing permissions for the runner user..."
-          sudo chown -R $(whoami):$(whoami) .
-          
-          echo "Fixing Wine 32-bit Crash by symlinking 64-bit Wine..."
-          rm -f opt/wine/bin/wine
-          ln -s wine64 opt/wine/bin/wine
-          
-          echo "Fixing Absolute Symlinks for Android Extraction..."
-          find . -type l -lname '/*' | while read -r link; do
-              target=$(readlink "$link")
-              rel_target=$(realpath -m --relative-to="$(dirname "$link")" ".$target")
-              rm -f "$link"
-              ln -s "$rel_target" "$link"
-          done
-          
-          mkdir -p tmp
-          chmod 1777 tmp
-          
-          echo "Compressing back to rootfs.tzst..."
-          tar --hard-dereference -I 'zstd -19' -cf ../rootfs.tzst .
-          
-          cd ..
-          sudo rm -rf temp_rootfs ubuntu.tar.gz wine.tar.xz
-          
-          echo "✅ New Ubuntu 26.04 Rootfs with Wine created successfully!"
+          rm -f app/src/main/assets/rootfs.tzst
 
-      - name: Clean Up Uncompressed Large Files
-        run: |
-          echo "Cleaning up temporary uncompressed files to keep APK size small..."
-          rm -rf app/src/main/assets/temp_rootfs
-          rm -rf app/src/main/assets/ubuntu.tar.gz
-          rm -rf app/src/main/assets/wine.tar.xz
-          
+          echo "Merging rootfs_parts into app/src/main/assets/rootfs.tzst..."
+          cat rootfs_parts/rootfs.tzst.part* > app/src/main/assets/rootfs.tzst
+
+          echo "Verifying merged rootfs..."
+          ls -lh app/src/main/assets/rootfs.tzst
+
       - name: Decode release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
