@@ -138,7 +138,24 @@ class MainActivity : AppCompatActivity() {
                 AssetExtractor.extractAssets(this@MainActivity)
 
                 val rootfsDir = File(imagefsDir, "rootfs")
+                
+                // 1. ZIP එකෙන් Wine ෆෝල්ඩර් වලට Extract කිරීම
                 extractExtraX86Libs(rootfsDir)
+
+                // 2. අලුත් කොටස: libgcc_s සහ libstdc++ හරියටම Wine එකට අහුවෙන්න System Libs විදිහටත් දාමු
+                val sysLibDir = File(rootfsDir, "usr/lib/x86_64-linux-gnu")
+                if (!sysLibDir.exists()) sysLibDir.mkdirs()
+
+                val wineLibDir = File(rootfsDir, "opt/wine/lib")
+                val soFiles = wineLibDir.listFiles { _, name -> name.endsWith(".so.1") || name.endsWith(".so.6") || name.contains(".so.6.") }
+                soFiles?.forEach { file ->
+                    val dest = File(sysLibDir, file.name)
+                    if (!dest.exists()) {
+                        file.copyTo(dest)
+                        dest.setReadable(true, false)
+                        Logger.log(this@MainActivity, "Copied System Lib: ${dest.path}")
+                    }
+                }
 
                 Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
                 val wineFile = File(rootfsDir, "opt/wine/bin/wine")
