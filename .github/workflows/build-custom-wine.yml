@@ -60,11 +60,16 @@ jobs:
         run: |
           cd wine-9.0
           mkdir build-arm64 && cd build-arm64
+          
+          # Pkg-config සඳහා ARM64 Paths බලෙන් ලබා දීම (FreeType සහ X11 සොයාගැනීමට)
+          export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
+          export PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig
+          
           ../configure \
             --host=aarch64-linux-gnu \
             --enable-archs=aarch64,x86_64,i386 \
             --with-x \
-            --without-freetype \
+            --with-freetype \
             --without-alsa \
             --without-oss \
             --with-wine-tools=../build-tools
