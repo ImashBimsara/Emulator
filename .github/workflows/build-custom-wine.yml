@@ -14,15 +14,13 @@ jobs:
         run: |
           sudo dpkg --add-architecture arm64
           
-          # 1. Error එක ගෙනාපු අනවශ්‍ය 3rd-party lists සම්පූර්ණයෙන්ම ඉවත් කිරීම
+          # 3rd-party lists ඉවත් කර 404 errors වැළැක්වීම
           sudo rm -f /etc/apt/sources.list.d/*.list
-          
-          # 2. Ubuntu 24.04 main sources amd64 වලට සීමා කිරීම (404 errors වැළැක්වීමට)
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
             sudo sed -i 's/^Types: deb/Types: deb\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
           fi
           
-          # 3. ARM64 Packages සඳහා ports.ubuntu.com අලුතින් හඳුන්වා දීම
+          # ARM64 Packages සඳහා ports.ubuntu.com හඳුන්වා දීම
           sudo tee /etc/apt/sources.list.d/ubuntu-arm64.sources <<EOF
           Types: deb
           Architectures: arm64
@@ -32,9 +30,7 @@ jobs:
           Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
           EOF
           
-          # 4. දැන් කිසිම අවුලක් නැතුව Update වී Install වේවි
           sudo apt-get update
-          
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             mingw-w64 flex bison make wget xz-utils pkg-config \
             libx11-dev:arm64 libfreetype-dev:arm64 \
@@ -51,6 +47,14 @@ jobs:
           echo "Applying 39-bit VMA memory limit patch for Android ARM64..."
           sed -i 's/address_space_limit = ((UINT64)1 << 47) - 1;/address_space_limit = ((UINT64)1 << 39) - 1;/g' dlls/ntdll/unix/virtual.c
           sed -i 's/user_space_limit    = (UINT64)1 << 47;/user_space_limit    = (UINT64)1 << 39;/g' dlls/ntdll/unix/virtual.c
+
+      - name: Build Host Wine Tools (Required for Cross-Compiling)
+        run: |
+          cd wine-9.0
+          mkdir build-tools && cd build-tools
+          # සර්වර් එකේ Tools සඳහා පමණක් බැවින් GUI (X/Freetype) අනවශ්‍යයි, එබැවින් වේගයෙන් Build වේ.
+          ../configure --without-x --without-freetype
+          make -j$(nproc)
           
       - name: Configure Wine WoW64 for ARM64
         run: |
@@ -62,7 +66,8 @@ jobs:
             --with-x \
             --with-freetype \
             --without-alsa \
-            --without-oss
+            --without-oss \
+            --with-wine-tools=../build-tools
           
       - name: Compile Wine (Takes 30-45 minutes)
         run: |
