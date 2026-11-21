@@ -1,5 +1,6 @@
 package com.your.customemulator
 
+import android.content.Context
 import android.os.Bundle
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -9,9 +10,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import java.io.File
 import java.io.FileInputStream
-import java.util.zip.ZipInputStream
+import java.io.FileOutputStream
+import java.util.zip.GZIPInputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -62,45 +65,72 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // 2. Native Environment (Rootfs extraction) ආරම්භ කිරීම
+        // 2. Native Environment (Rootfs සහ Wine) ආරම්භ කිරීම
         setupNativeEnvironment()
     }
 
-    private fun extractExtraX86Libs(rootfsDir: File) {
-        val libsZipName = "x86_64_libs.zip"
-        val availableAssets = assets.list("") ?: emptyArray()
-        if (!availableAssets.contains(libsZipName)) {
+    // අලුත් Wine ZIP Parts ටික එකතු කර Extract කරන Function එක
+    private fun extractWineParts(context: Context, destDir: String) {
+        val assetManager = context.assets
+        val wineDestDir = File(destDir, "opt/wine")
+
+        // Wine කලින් Extract වෙලා නම් ආයෙත් කරන්නේ නැහැ
+        if (wineDestDir.exists() && wineDestDir.listFiles()?.isNotEmpty() == true) {
+            Logger.log(context, "Wine is already extracted.")
             return
         }
 
-        Logger.log(this, "Found $libsZipName in assets. Extracting x86_64 libraries...")
-        val targetDirs = listOf(
-            File(rootfsDir, "opt/wine/lib"),
-            File(rootfsDir, "opt/wine/lib/wine/x86_64-unix")
-        )
-
-        targetDirs.forEach { dir ->
-            if (!dir.exists()) {
-                dir.mkdirs()
+        Logger.log(context, "Starting to extract Custom Wine...")
+        
+        try {
+            // 1. Assets/wine_parts වල තියෙන කෑලි ටික හොයාගැනීම
+            val parts = assetManager.list("wine_parts")?.filter { it.startsWith("wine_part_") }?.sorted()
+            if (parts.isNullOrEmpty()) {
+                Logger.log(context, "❌ ERROR: No Wine parts found in assets/wine_parts/")
+                return
             }
-            assets.open(libsZipName).use { inputStream ->
-                ZipInputStream(inputStream).use { zip ->
-                    var entry = zip.nextEntry
-                    while (entry != null) {
-                        if (!entry.isDirectory) {
-                            val cleanName = File(entry.name).name
-                            val outFile = File(dir, cleanName)
-                            outFile.outputStream().use { output ->
-                                zip.copyTo(output)
-                            }
-                            outFile.setReadable(true, false)
-                            Logger.log(this, "Extracted $cleanName -> ${dir.path}")
-                        }
-                        zip.closeEntry()
-                        entry = zip.nextEntry
+
+            // 2. කෑලි ටික එකතු කරලා තාවකාලික tar.gz එකක් සෑදීම
+            val tempTarGz = File(context.cacheDir, "patched-wine.tar.gz")
+            FileOutputStream(tempTarGz).use { output ->
+                for (part in parts) {
+                    assetManager.open("wine_parts/$part").use { input ->
+                        input.copyTo(output)
                     }
                 }
             }
+            Logger.log(context, "Combined ${parts.size} parts successfully into ${tempTarGz.name}.")
+
+            // 3. Apache Commons Compress භාවිතා කර tar.gz එක opt/wine ෆෝල්ඩරයට Extract කිරීම
+            FileInputStream(tempTarGz).use { fi ->
+                GZIPInputStream(fi).use { gzi ->
+                    TarArchiveInputStream(gzi).use { tar ->
+                        var entry = tar.nextTarEntry
+                        while (entry != null) {
+                            // entry.name සාමාන්‍යයෙන් "opt/wine/..." ලෙස පැමිණෙන නිසා කෙලින්ම destDir (rootfs) වෙත දාන්න පුළුවන්
+                            val outputFile = File(destDir, entry.name)
+                            if (entry.isDirectory) {
+                                outputFile.mkdirs()
+                            } else {
+                                outputFile.parentFile?.mkdirs()
+                                FileOutputStream(outputFile).use { fos ->
+                                    tar.copyTo(fos)
+                                }
+                                outputFile.setExecutable(true, false) // බයිනරි වලට permission දීම
+                            }
+                            entry = tar.nextTarEntry
+                        }
+                    }
+                }
+            }
+            
+            // 4. තාවකාලික tar.gz එක මකා දැමීම
+            tempTarGz.delete()
+            Logger.log(context, "Custom Wine Extraction Completed Successfully!")
+
+        } catch (e: Exception) {
+            Logger.log(context, "❌ Error extracting Wine: ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -131,34 +161,21 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (imagefsDir.exists()) {
+                    // අපි පළවෙනි වතාවට අලුත් Wine එක දාන නිසා, පරණ එක ඩිලීට් කිරීම හොඳයි
                     Logger.log(this@MainActivity, "Deleting old imagefs folder...")
                     imagefsDir.deleteRecursively()
                 }
 
+                // 1. මුලින්ම Ubuntu Rootfs එක Extract කිරීම (ඔබේ පැරණි කේතය)
                 AssetExtractor.extractAssets(this@MainActivity)
 
                 val rootfsDir = File(imagefsDir, "rootfs")
                 
-                // 1. ZIP එකෙන් Wine ෆෝල්ඩර් වලට Extract කිරීම
-                extractExtraX86Libs(rootfsDir)
-
-                // 2. අලුත් කොටස: libgcc_s සහ libstdc++ හරියටම Wine එකට අහුවෙන්න System Libs විදිහටත් දාමු
-                val sysLibDir = File(rootfsDir, "usr/lib/x86_64-linux-gnu")
-                if (!sysLibDir.exists()) sysLibDir.mkdirs()
-
-                val wineLibDir = File(rootfsDir, "opt/wine/lib")
-                val soFiles = wineLibDir.listFiles { _, name -> name.endsWith(".so.1") || name.endsWith(".so.6") || name.contains(".so.6.") }
-                soFiles?.forEach { file ->
-                    val dest = File(sysLibDir, file.name)
-                    if (!dest.exists()) {
-                        file.copyTo(dest)
-                        dest.setReadable(true, false)
-                        Logger.log(this@MainActivity, "Copied System Lib: ${dest.path}")
-                    }
-                }
+                // 2. අලුත් Custom Wine එක Rootfs එක ඇතුළට (opt/wine) Extract කිරීම
+                extractWineParts(this@MainActivity, rootfsDir.absolutePath)
 
                 Logger.log(this@MainActivity, "Checking for Wine, Box64 and Proot...")
-                val wineFile = File(rootfsDir, "opt/wine/bin/wine")
+                val wineFile = File(rootfsDir, "opt/wine/bin/wine") // අලුත් Wine path එක
 
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val box64File = File(nativeLibDir, "libbox64.so")
@@ -201,33 +218,20 @@ class MainActivity : AppCompatActivity() {
                 val prootLibPath = File(nativeLibDir, "libproot.so").absolutePath
                 val box64HostPath = File(nativeLibDir, "libbox64.so").absolutePath
 
+                // අලුතින් සාදාගත් Wine එකේ Path එක
                 val wineInternalPath = "/opt/wine/bin/wine"
 
-                // දැනට Installer එකක් නැති නිසා, Wine එකේ Default Explorer එක හෝ Wineboot ධාවනය කරමු
                 val installerInternalPath = "c:\\windows\\system32\\wineboot.exe"
 
                 val winePrefixHostPath = File(filesDir, "wineprefix").absolutePath
                 val publicDir = getExternalFilesDir(null) ?: filesDir
                 val logFilePath = File(publicDir, "wine_output.log").absolutePath
 
-                Logger.log(this, "=== Starting Wine Automatically via JNI ===")
+                Logger.log(this, "=== Starting Custom Wine Automatically via JNI ===")
                 Logger.log(this, "Proot Lib: $prootLibPath")
+                Logger.log(this, "Wine Path: $wineInternalPath")
                 Logger.log(this, "Box64 Host Path: $box64HostPath")
                 Logger.log(this, "Wine Output Log: $logFilePath")
-
-                // DIAGNOSTIC LOGS
-                val box64FullPath = File(box64HostPath)
-                if (box64FullPath.exists()) {
-                    try {
-                        val bytes = ByteArray(4)
-                        FileInputStream(box64FullPath).use { input ->
-                            input.read(bytes)
-                        }
-                        Logger.log(this, "Box64 magic bytes: ${bytes.joinToString(" ") { String.format("%02X", it) }}")
-                    } catch (e: Exception) {
-                        Logger.log(this, "❌ Error reading box64 bytes: ${e.message}")
-                    }
-                }
 
                 // C++ වෙත දත්ත යැවීම
                 val result = runProotJNI(
