@@ -61,9 +61,16 @@ jobs:
           cd wine-9.0
           mkdir build-arm64 && cd build-arm64
           
-          # Pkg-config variables කෙලින්ම configure command එකටම ලබා දීම
-          PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig \
-          PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
+          # Pkg-config bypass කර කෙලින්ම Headers සහ Libs ලින්ක් කිරීම
+          sudo mkdir -p /usr/aarch64-linux-gnu/include/freetype2
+          sudo ln -sf /usr/include/freetype2/freetype /usr/aarch64-linux-gnu/include/freetype2/freetype
+          sudo ln -sf /usr/include/freetype2/ft2build.h /usr/aarch64-linux-gnu/include/ft2build.h
+          sudo ln -sf /usr/lib/aarch64-linux-gnu/libfreetype.so /usr/aarch64-linux-gnu/lib/libfreetype.so
+          
+          # Custom Flags ලබා දීම
+          export CFLAGS="-I/usr/aarch64-linux-gnu/include/freetype2 -I/usr/aarch64-linux-gnu/include"
+          export LDFLAGS="-L/usr/aarch64-linux-gnu/lib"
+          
           ../configure \
             --host=aarch64-linux-gnu \
             --enable-archs=aarch64,x86_64,i386 \
