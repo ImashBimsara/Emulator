@@ -10,10 +10,32 @@ jobs:
       - name: Free up disk space (Optional but safe)
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
 
-      - name: Install ARM64 Cross-Compiler & Dependencies
+      - name: Configure APT for ARM64 Ports & Install Dependencies
         run: |
           sudo dpkg --add-architecture arm64
-          sudo apt-get update
+          
+          # පවතින 3rd party repos amd64 වලට පමණක් සීමා කිරීම (404 errors වැළැක්වීමට)
+          sudo find /etc/apt/sources.list.d/ -name "*.list" -exec sed -i 's/^deb /deb [arch=amd64] /g' {} +
+          
+          # Ubuntu 24.04 main sources amd64 වලට සීමා කිරීම
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i 's/^Types: deb/Types: deb\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          
+          # ARM64 Packages සඳහා ports.ubuntu.com අලුතින් හඳුන්වා දීම
+          sudo tee /etc/apt/sources.list.d/ubuntu-arm64.sources <<EOF
+          Types: deb
+          Architectures: arm64
+          URIs: http://ports.ubuntu.com/ubuntu-ports/
+          Suites: noble noble-updates noble-security
+          Components: main universe restricted multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          
+          # Update කිරීම (සුළු 3rd party warnings ආවොත් ignore කිරීමට || true යොදා ඇත)
+          sudo apt-get update || true
+          
+          # අත්‍යවශ්‍ය Cross-compilers සහ X11/FreeType libraries install කිරීම
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             mingw-w64 flex bison make wget xz-utils pkg-config \
             libx11-dev:arm64 libfreetype-dev:arm64 \
