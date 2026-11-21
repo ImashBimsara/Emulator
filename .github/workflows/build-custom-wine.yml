@@ -64,7 +64,7 @@ jobs:
             --host=aarch64-linux-gnu \
             --enable-archs=aarch64,x86_64,i386 \
             --with-x \
-            --with-freetype \
+            --without-freetype \
             --without-alsa \
             --without-oss \
             --with-wine-tools=../build-tools
