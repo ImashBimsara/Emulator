@@ -37,26 +37,48 @@ jobs:
             rm libs.zip
           fi
       
-      - name: Merge Rootfs Parts into Assets
+      - name: Combine Rootfs and Inject Custom Wine
         run: |
-          echo "Merging rootfs parts from app/src/main/assets/rootfs_parts..."
-          PARTS_DIR="app/src/main/assets/rootfs_parts"
+          echo "Merging rootfs and wine parts from assets..."
+          ROOTFS_PARTS="app/src/main/assets/rootfs_parts"
+          WINE_PARTS="app/src/main/assets/wine_parts"
           OUT_FILE="app/src/main/assets/rootfs.tzst"
 
-          rm -f "$OUT_FILE"
-
-          if ls "$PARTS_DIR"/rootfs.tzst.part* 1> /dev/null 2>&1; then
-            cat "$PARTS_DIR"/rootfs.tzst.part* > "$OUT_FILE"
-            echo "Rootfs merged successfully!"
-            ls -lh "$OUT_FILE"
-
-            # APK එකේ Size එක වැඩි වීම වැළැක්වීමට parts ෆෝල්ඩරය assets වලින් ඉවත් කිරීම
-            rm -rf "$PARTS_DIR"
-            echo "Removed temporary rootfs_parts from assets."
+          # 1. Rootfs කෑලි එකතු කිරීම
+          if ls "$ROOTFS_PARTS"/rootfs.tzst.part* 1> /dev/null 2>&1; then
+            cat "$ROOTFS_PARTS"/rootfs.tzst.part* > temp_rootfs.tzst
           else
-            echo "❌ ERROR: No part files found in $PARTS_DIR!"
+            echo "❌ ERROR: No rootfs parts found!"
             exit 1
           fi
+
+          # 2. Wine කෑලි එකතු කිරීම
+          if ls "$WINE_PARTS"/wine.tar.gz.part* 1> /dev/null 2>&1; then
+            cat "$WINE_PARTS"/wine.tar.gz.part* > temp_wine.tar.gz
+          else
+            echo "❌ ERROR: No wine parts found!"
+            exit 1
+          fi
+
+          echo "Extracting rootfs..."
+          # 3. Rootfs Extract කිරීම (මෙහිදී 'rootfs' නමින් ෆෝල්ඩරයක් සෑදේ)
+          tar -I zstd -xf temp_rootfs.tzst
+
+          echo "Injecting Wine into rootfs/opt..."
+          # 4. අර opt/ ෆෝල්ඩරය සහිත Wine zip එක rootfs ෆෝල්ඩරය ඇතුළටම Extract කිරීම
+          tar -xzf temp_wine.tar.gz -C rootfs/
+
+          echo "Re-compressing into final rootfs.tzst..."
+          # 5. සියල්ල එකට එක් කර නැවත tzst ලෙස සම්පීඩනය කිරීම
+          rm -f "$OUT_FILE"
+          tar -I zstd -cf "$OUT_FILE" rootfs/
+
+          echo "Cleaning up temporary files..."
+          # 6. APK Size එක අඩු කිරීමට parts සහ temp ෆයිල් මකා දැමීම
+          rm -rf "$ROOTFS_PARTS" "$WINE_PARTS" temp_rootfs.tzst temp_wine.tar.gz rootfs/
+
+          echo "✅ Rootfs merged with Wine successfully!"
+          ls -lh "$OUT_FILE"
 
       - name: Decode release keystore
         env:
