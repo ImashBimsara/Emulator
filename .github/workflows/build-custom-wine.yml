@@ -1,13 +1,13 @@
 name: Build Patched Wine 9.0 (Android)
 
 on:
-  workflow_dispatch: # ඔබට අවශ්‍ය වෙලාවට පමණක් Run කිරීමට
+  workflow_dispatch:
 
 jobs:
   build-wine:
     runs-on: ubuntu-24.04
     steps:
-      - name: Free up disk space (Optional but safe)
+      - name: Free up disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
 
       - name: Configure APT for ARM64 Ports & Install Dependencies
@@ -20,7 +20,6 @@ jobs:
             sudo sed -i 's/^Types: deb/Types: deb\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
           fi
           
-          # ARM64 Packages සඳහා ports.ubuntu.com හඳුන්වා දීම
           sudo tee /etc/apt/sources.list.d/ubuntu-arm64.sources <<EOF
           Types: deb
           Architectures: arm64
@@ -31,9 +30,11 @@ jobs:
           EOF
           
           sudo apt-get update
+          
+          # මෙහි libfreetype-dev (x86_64 Host එක සඳහා) අලුතින් එක් කර ඇත
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             mingw-w64 flex bison make wget xz-utils pkg-config \
-            libx11-dev:arm64 libfreetype-dev:arm64 \
+            libx11-dev:arm64 libfreetype-dev:arm64 libfreetype-dev \
             libxext-dev:arm64 libvulkan-dev:arm64
 
       - name: Download Wine 9.0 Source
@@ -52,8 +53,9 @@ jobs:
         run: |
           cd wine-9.0
           mkdir build-tools && cd build-tools
-          # 32-bit error එක මඟහැරීමට --enable-win64 එකතු කර ඇත
-          ../configure --enable-win64 --without-x --without-freetype
+          
+          # sfnt2fon සඳහා අනිවාර්යයෙන්ම FreeType ලබා දීම
+          ../configure --enable-win64 --without-x --with-freetype
           make -j$(nproc)
           
       - name: Configure Wine WoW64 for ARM64
@@ -80,7 +82,7 @@ jobs:
             --without-oss \
             --with-wine-tools=../build-tools
           
-      - name: Compile Wine (Takes 30-45 minutes)
+      - name: Compile Wine
         run: |
           cd wine-9.0/build-arm64
           make -j$(nproc)
