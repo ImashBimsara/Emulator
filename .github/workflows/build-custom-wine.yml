@@ -92,6 +92,12 @@ jobs:
           cd wine-9.0/build-arm64
           make install DESTDIR=$(pwd)/../wine-android
           cd ../wine-android
+          
+          # usr/local ෆෝල්ඩරය opt/wine ලෙස වෙනස් කිරීම
+          mkdir -p opt/wine
+          mv usr/local/* opt/wine/
+          
+          # දැන් opt ෆෝල්ඩරය zip කිරීම
           tar -czvf patched-wine.tar.gz opt/
           
       - name: Upload Patched Wine
