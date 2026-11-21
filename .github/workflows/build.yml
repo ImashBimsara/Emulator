@@ -61,32 +61,35 @@ jobs:
           fi
 
           echo "Extracting rootfs into workspace..."
-          # 3. Workspace එකක් සාදා Rootfs එක ඒකට Extract කිරීම
           mkdir -p rootfs_workspace
           tar -I zstd -xf temp_rootfs.tzst -C rootfs_workspace/
 
-          echo "Removing old Wine from rootfs..."
-          # 4. Rootfs එක ඇතුළේ දැනට තියෙන පරණ Wine ෆෝල්ඩරය සම්පූර්ණයෙන්ම මකා දැමීම
+          echo "Deep cleaning ANY old Wine traces (To reduce size)..."
+          # 3. Rootfs එක ඇතුළේ කොහේ හරි පරණ Wine එකක් හැංගිලා තියෙනවා නම් ඒ සේරම අතුගාලා දානවා
           rm -rf rootfs_workspace/opt/wine
-          # (පරණ Wine එක වෙනත් තැන්වල තිබුණොත් ඒවාත් ආරක්ෂාවට මකා දැමීම)
           rm -rf rootfs_workspace/usr/local/wine
+          rm -rf rootfs_workspace/usr/lib/wine
+          rm -rf rootfs_workspace/usr/lib/i386-linux-gnu/wine
+          rm -rf rootfs_workspace/usr/lib/x86_64-linux-gnu/wine
+          rm -rf rootfs_workspace/usr/lib/aarch64-linux-gnu/wine
+          rm -f rootfs_workspace/usr/bin/wine*
           rm -f rootfs_workspace/usr/local/bin/wine*
 
           echo "Injecting NEW Custom Wine..."
-          # 5. අලුත් Wine zip එක (ඒකෙත් opt/wine ෆෝල්ඩරය තියෙන නිසා) කෙලින්ම workspace එකට Extract කිරීම
+          # 4. අපේ අලුත් Wine එක විතරක් Extract කරනවා
           tar -xzf temp_wine.tar.gz -C rootfs_workspace/
 
-          echo "Re-compressing into final rootfs.tzst..."
-          # 6. සියල්ල එකට එක් කර නැවත tzst ලෙස සම්පීඩනය කිරීම
+          echo "Re-compressing into final rootfs.tzst with HIGH Compression..."
+          # 5. ZSTD Level 19 (උපරිම සම්පීඩනය) භාවිතා කරමින් සයිස් එක ගොඩක් අඩු කරනවා
           cd rootfs_workspace
-          tar -I zstd -cf ../"$OUT_FILE" .
+          tar -I 'zstd -19 -T0' -cf ../"$OUT_FILE" .
           cd ..
 
           echo "Cleaning up temporary files..."
-          # 7. APK Size එක අඩු කිරීමට parts සහ temp ෆයිල් මකා දැමීම
+          # 6. APK එක හැදෙන්න කලින් අනවශ්‍ය ඔක්කොම මකනවා
           rm -rf "$ROOTFS_PARTS" "$WINE_PARTS" temp_rootfs.tzst temp_wine.tar.gz rootfs_workspace/
 
-          echo "✅ Rootfs successfully updated with NEW Wine!"
+          echo "✅ Rootfs successfully updated and highly compressed!"
           ls -lh "$OUT_FILE"
 
       - name: Decode release keystore
