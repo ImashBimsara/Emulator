@@ -52,8 +52,8 @@ jobs:
         run: |
           cd wine-9.0
           mkdir build-tools && cd build-tools
-          # සර්වර් එකේ Tools සඳහා පමණක් බැවින් GUI (X/Freetype) අනවශ්‍යයි, එබැවින් වේගයෙන් Build වේ.
-          ../configure --without-x --without-freetype
+          # 32-bit error එක මඟහැරීමට --enable-win64 එකතු කර ඇත
+          ../configure --enable-win64 --without-x --without-freetype
           make -j$(nproc)
           
       - name: Configure Wine WoW64 for ARM64
