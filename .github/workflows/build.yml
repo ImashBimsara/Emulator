@@ -37,7 +37,7 @@ jobs:
             rm libs.zip
           fi
       
-      - name: Combine Rootfs and Inject Custom Wine
+      - name: Combine Rootfs and Replace Old Wine
         run: |
           echo "Merging rootfs and wine parts from assets..."
           ROOTFS_PARTS="app/src/main/assets/rootfs_parts"
@@ -52,7 +52,7 @@ jobs:
             exit 1
           fi
 
-          # 2. Wine කෑලි එකතු කිරීම (මෙහි නම wine_part_* ලෙස වෙනස් කර ඇත)
+          # 2. අලුත් Wine කෑලි එකතු කිරීම
           if ls "$WINE_PARTS"/wine_part_* 1> /dev/null 2>&1; then
             cat "$WINE_PARTS"/wine_part_* > temp_wine.tar.gz
           else
@@ -60,24 +60,33 @@ jobs:
             exit 1
           fi
 
-          echo "Extracting rootfs..."
-          # 3. Rootfs Extract කිරීම (මෙහිදී 'rootfs' නමින් ෆෝල්ඩරයක් සෑදේ)
-          tar -I zstd -xf temp_rootfs.tzst
+          echo "Extracting rootfs into workspace..."
+          # 3. Workspace එකක් සාදා Rootfs එක ඒකට Extract කිරීම
+          mkdir -p rootfs_workspace
+          tar -I zstd -xf temp_rootfs.tzst -C rootfs_workspace/
 
-          echo "Injecting Wine into rootfs/opt..."
-          # 4. අර opt/ ෆෝල්ඩරය සහිත Wine zip එක rootfs ෆෝල්ඩරය ඇතුළටම Extract කිරීම
-          tar -xzf temp_wine.tar.gz -C rootfs/
+          echo "Removing old Wine from rootfs..."
+          # 4. Rootfs එක ඇතුළේ දැනට තියෙන පරණ Wine ෆෝල්ඩරය සම්පූර්ණයෙන්ම මකා දැමීම
+          rm -rf rootfs_workspace/opt/wine
+          # (පරණ Wine එක වෙනත් තැන්වල තිබුණොත් ඒවාත් ආරක්ෂාවට මකා දැමීම)
+          rm -rf rootfs_workspace/usr/local/wine
+          rm -f rootfs_workspace/usr/local/bin/wine*
+
+          echo "Injecting NEW Custom Wine..."
+          # 5. අලුත් Wine zip එක (ඒකෙත් opt/wine ෆෝල්ඩරය තියෙන නිසා) කෙලින්ම workspace එකට Extract කිරීම
+          tar -xzf temp_wine.tar.gz -C rootfs_workspace/
 
           echo "Re-compressing into final rootfs.tzst..."
-          # 5. සියල්ල එකට එක් කර නැවත tzst ලෙස සම්පීඩනය කිරීම
-          rm -f "$OUT_FILE"
-          tar -I zstd -cf "$OUT_FILE" rootfs/
+          # 6. සියල්ල එකට එක් කර නැවත tzst ලෙස සම්පීඩනය කිරීම
+          cd rootfs_workspace
+          tar -I zstd -cf ../"$OUT_FILE" .
+          cd ..
 
           echo "Cleaning up temporary files..."
-          # 6. APK Size එක අඩු කිරීමට parts සහ temp ෆයිල් මකා දැමීම
-          rm -rf "$ROOTFS_PARTS" "$WINE_PARTS" temp_rootfs.tzst temp_wine.tar.gz rootfs/
+          # 7. APK Size එක අඩු කිරීමට parts සහ temp ෆයිල් මකා දැමීම
+          rm -rf "$ROOTFS_PARTS" "$WINE_PARTS" temp_rootfs.tzst temp_wine.tar.gz rootfs_workspace/
 
-          echo "✅ Rootfs merged with Wine successfully!"
+          echo "✅ Rootfs successfully updated with NEW Wine!"
           ls -lh "$OUT_FILE"
 
       - name: Decode release keystore
