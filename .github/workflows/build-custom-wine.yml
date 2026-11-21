@@ -1,0 +1,62 @@
+name: Build Patched Wine 9.0 (Android)
+
+on:
+  workflow_dispatch: # ඔබට අවශ්‍ය වෙලාවට පමණක් Run කිරීමට
+
+jobs:
+  build-wine:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Free up disk space (Optional but safe)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+
+      - name: Install ARM64 Cross-Compiler & Dependencies
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            mingw-w64 flex bison make wget xz-utils pkg-config \
+            libx11-dev:arm64 libfreetype-dev:arm64 \
+            libxext-dev:arm64 libvulkan-dev:arm64
+
+      - name: Download Wine 9.0 Source
+        run: |
+          wget https://dl.winehq.org/wine/source/9.0/wine-9.0.tar.xz
+          tar -xf wine-9.0.tar.xz
+          
+      - name: Apply Custom Android Patches (39-bit VMA Limit)
+        run: |
+          cd wine-9.0
+          echo "Applying 39-bit VMA memory limit patch for Android ARM64..."
+          sed -i 's/address_space_limit = ((UINT64)1 << 47) - 1;/address_space_limit = ((UINT64)1 << 39) - 1;/g' dlls/ntdll/unix/virtual.c
+          sed -i 's/user_space_limit    = (UINT64)1 << 47;/user_space_limit    = (UINT64)1 << 39;/g' dlls/ntdll/unix/virtual.c
+          
+      - name: Configure Wine WoW64 for ARM64
+        run: |
+          cd wine-9.0
+          mkdir build-arm64 && cd build-arm64
+          ../configure \
+            --host=aarch64-linux-gnu \
+            --enable-archs=aarch64,x86_64,i386 \
+            --with-x \
+            --with-freetype \
+            --without-alsa \
+            --without-oss
+          
+      - name: Compile Wine (Takes 30-45 minutes)
+        run: |
+          cd wine-9.0/build-arm64
+          make -j$(nproc)
+          
+      - name: Install & Create Artifact
+        run: |
+          cd wine-9.0/build-arm64
+          make install DESTDIR=$(pwd)/../wine-android
+          cd ../wine-android
+          tar -czvf patched-wine.tar.gz opt/
+          
+      - name: Upload Patched Wine
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-wine-android
+          path: wine-9.0/wine-android/patched-wine.tar.gz
