@@ -52,9 +52,9 @@ jobs:
             exit 1
           fi
 
-          # 2. Wine කෑලි එකතු කිරීම
-          if ls "$WINE_PARTS"/wine.tar.gz.part* 1> /dev/null 2>&1; then
-            cat "$WINE_PARTS"/wine.tar.gz.part* > temp_wine.tar.gz
+          # 2. Wine කෑලි එකතු කිරීම (මෙහි නම wine_part_* ලෙස වෙනස් කර ඇත)
+          if ls "$WINE_PARTS"/wine_part_* 1> /dev/null 2>&1; then
+            cat "$WINE_PARTS"/wine_part_* > temp_wine.tar.gz
           else
             echo "❌ ERROR: No wine parts found!"
             exit 1
