@@ -96,7 +96,14 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         setenv("BOX64_PATH", "/opt/wine/bin", 1);
 
-        setenv("BOX64_NOSIGSEGV", "1", 1);
+        // අත්‍යවශ්‍ය: BOX64_NOSIGSEGV=1 ඉවත් කර ඇත, මන්ද Wine Patches එය මත රඳා පවතී.
+        
+        // Box64 සඳහා අලුත් noexec/patch bypass variables 
+        setenv("BOX64_ALLOWMISSINGENV", "1", 1);
+        setenv("BOX64_NOSIGILL", "1", 1);
+        setenv("BOX64_NOBANNER", "1", 1);
+        setenv("WINE_DISABLE_KERNEL_MODE", "1", 1); 
+
         setenv("WINEPRELOADRESERVE", "0x7ffffff40000-0x7fffffff0000", 1);
         
         // අලුතින් extract කරපු /usr/lib/x86_64-linux-gnu path එකත් මෙතැනට එකතු කර ඇත
