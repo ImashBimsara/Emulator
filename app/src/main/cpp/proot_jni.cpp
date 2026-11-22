@@ -136,12 +136,13 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
         dprintf(STDERR_FILENO, "Wine (WoW64): %s\n", wine);
 
-        // අලුත් mmap_hook.so එක LD_PRELOAD හරහා Wine එකට Inject කිරීම සඳහා Shell කමාන්ඩ් එක හැදීම
+        // mmap_hook එකේ path එක
         std::string ldPreload = std::string(nativeDir) + "/libmmap_hook.so";
-
-        // මෙහි nativeDir අලුතින් එකතු කර ඇත
-        std::string shellCmd = "export LD_LIBRARY_PATH=" + std::string(nativeDir) + ":/system/lib64:/system/lib:/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && export LD_PRELOAD=" + ldPreload + " && exec \"$@\"";        
-                
+        
+        // 1. Android Shell එකට දෙන LD_LIBRARY_PATH එක වෙනස් නොකර තබා ගනිමු
+        std::string shellCmd = "export LD_LIBRARY_PATH=" + std::string(nativeDir) + ":/system/lib64:/system/lib:/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"";
+        
+        // 2. PRoot එකට දෙන Arguments වෙනස් කිරීම (LD_PRELOAD එක Box64 එකට විතරක් සීමා කිරීම)
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
@@ -158,8 +159,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 
                 (char*)"/system/bin/sh",
                 (char*)"-c",
-                (char*)shellCmd.c_str(), // <--- අලුතින් හදපු Shell Command එක මෙතැනට දැම්මා
+                (char*)shellCmd.c_str(),
                 (char*)"sh",      
+                // මෙන්න මෙතැනයි වෙනස: Box64 Run කරන්න කලින් LD_PRELOAD එක set කරනවා (env හරහා)
+                (char*)"env", 
+                (char*)(std::string("LD_PRELOAD=") + ldPreload).c_str(),
                 (char*)box64Src,  
                 (char*)"/opt/wine/bin/wine64", 
                 (char*)installer, 
