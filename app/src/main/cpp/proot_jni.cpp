@@ -137,11 +137,10 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         dprintf(STDERR_FILENO, "Wine (WoW64): %s\n", wine);
 
         // අලුත් mmap_hook.so එක LD_PRELOAD හරහා Wine එකට Inject කිරීම සඳහා Shell කමාන්ඩ් එක හැදීම
-        // අලුත් mmap_hook.so එක LD_PRELOAD හරහා Wine එකට Inject කිරීම සඳහා Shell කමාන්ඩ් එක හැදීම
-std::string ldPreload = std::string(nativeDir) + "/libmmap_hook.so";
+        std::string ldPreload = std::string(nativeDir) + "/libmmap_hook.so";
 
-// මෙහි /system/lib64:/system/lib අලුතින් එකතු කර ඇත
-std::string shellCmd = "export LD_LIBRARY_PATH=/system/lib64:/system/lib:/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && export LD_PRELOAD=" + ldPreload + " && exec \"$@\"";
+        // මෙහි nativeDir අලුතින් එකතු කර ඇත
+        std::string shellCmd = "export LD_LIBRARY_PATH=" + std::string(nativeDir) + ":/system/lib64:/system/lib:/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && export LD_PRELOAD=" + ldPreload + " && exec \"$@\"";        
                 
         char* const argv[] = {
                 (char*)"proot",
