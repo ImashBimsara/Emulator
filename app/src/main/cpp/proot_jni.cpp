@@ -96,7 +96,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         setenv("BOX64_PATH", "/opt/wine/bin", 1);
 
-        // අත්‍යවශ්‍ය: BOX64_NOSIGSEGV=1 ඉවත් කර ඇත, මන්ද Wine Patches එය මත රඳා පවතී.
+        // මේක තමයි Android 14 වල noexec ප්‍රශ්නය Box64 හරහාම විසඳන ප්‍රධානම යතුර 
+        setenv("BOX64_MMAP_HACK", "1", 1);
         
         // Box64 සඳහා අලුත් noexec/patch bypass variables 
         setenv("BOX64_ALLOWMISSINGENV", "1", 1);
