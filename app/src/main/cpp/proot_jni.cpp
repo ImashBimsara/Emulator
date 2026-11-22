@@ -14,7 +14,7 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "EmulatorJNI", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "EmulatorJNI", __VA_ARGS__)
 
-// ෆයිල් කොපි කරගැනීමට උදව් ෆන්ක්ෂන් එකක් (Android 10+ noexec bypass)
+// ෆයිල් කොපි කරගැනීමට උදව් ෆන්ක්ෂන් එකක්
 bool copyFile(const char* src, const char* dst) {
     std::ifstream srcFile(src, std::ios::binary);
     std::ofstream dstFile(dst, std::ios::binary);
@@ -23,46 +23,50 @@ bool copyFile(const char* src, const char* dst) {
     return true;
 }
 
+// Kotlin එකේ runProotJNI එකට ගැලපෙන පරිදි 9ක් ගන්නවා
 extern "C" JNIEXPORT jint JNICALL
-Java_com_your_customemulator_MainActivity_startWine(JNIEnv *env, jobject /* thiz */,
-                                                    jstring jRootfs, 
-                                                    jstring jProotPath, 
-                                                    jstring jBox64Path, 
-                                                    jstring jInstallerPath) {
+Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* thiz */,
+                                                    jstring jArg1, 
+                                                    jstring jArg2, 
+                                                    jstring jArg3, 
+                                                    jstring jArg4,
+                                                    jstring jArg5,
+                                                    jstring jArg6,
+                                                    jstring jArg7,
+                                                    jstring jArg8,
+                                                    jstring jArg9) {
 
-    const char *rootfs = env->GetStringUTFChars(jRootfs, nullptr);
-    const char *proot_orig = env->GetStringUTFChars(jProotPath, nullptr);
-    const char *box64_orig = env->GetStringUTFChars(jBox64Path, nullptr);
-    const char *installer = env->GetStringUTFChars(jInstallerPath, nullptr);
+    // මුල් 4ක් පමණක් අපි භාවිතා කරමු (ඔබේ Kotlin කෝඩ් එකේ පිළිවෙලට)
+    const char *rootfs = env->GetStringUTFChars(jArg1, nullptr);
+    const char *proot_orig = env->GetStringUTFChars(jArg2, nullptr);
+    const char *box64_orig = env->GetStringUTFChars(jArg3, nullptr);
+    const char *installer = env->GetStringUTFChars(jArg4, nullptr);
 
-    // 1. App එකේ Files Directory එක ලබා ගැනීම (Temp සහ Log සඳහා)
+    // App එකේ Files Directory එක ලබා ගැනීම
     std::string appFilesDir = "/data/data/com.your.customemulator/files";
     std::string tmpDir = appFilesDir + "/tmp";
     mkdir(appFilesDir.c_str(), 0777);
     mkdir(tmpDir.c_str(), 0777);
 
-    // 2. Android 10+ Restriction (noexec) මගහරවා ගැනීමට, Binaries Files Dir එකට Copy කිරීම
+    // Android 10+ Restriction මගහරවා ගැනීමට Binaries Copy කිරීම
     std::string proot = appFilesDir + "/proot";
     std::string box64 = appFilesDir + "/box64";
     
     copyFile(proot_orig, proot.c_str());
-    chmod(proot.c_str(), 0755); // Execute Permission දීම
+    chmod(proot.c_str(), 0755);
     
     copyFile(box64_orig, box64.c_str());
     chmod(box64.c_str(), 0755);
 
-    // Box64 Path එකෙන් nativeDir එක (උදා: /data/app/.../lib/arm64) වෙන්කර ගැනීම
     char box64Copy[1024];
     strncpy(box64Copy, box64_orig, sizeof(box64Copy));
     std::string nativeDir = dirname(box64Copy);
 
-    // 3. Shell Command එක (අලුත් Paths සමඟ)
     std::string shellCmd = "export LD_LIBRARY_PATH=" + nativeDir + 
                            ":/system/lib64:/system/lib" +
                            ":/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix" +
                            ":/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"";
 
-    // 4. PRoot Arguments (අලුත් path එකෙන් proot එක run කරයි)
     char* const argv[] = {
             (char*)"proot",
             (char*)"--link2symlink",
@@ -82,7 +86,7 @@ Java_com_your_customemulator_MainActivity_startWine(JNIEnv *env, jobject /* thiz
             (char*)shellCmd.c_str(),
             (char*)"sh",      
             
-            (char*)box64.c_str(),             // Copy කළ Box64
+            (char*)box64.c_str(),
             (char*)"/opt/wine/bin/wine64",    
             (char*)installer,                 
             nullptr
@@ -94,22 +98,18 @@ Java_com_your_customemulator_MainActivity_startWine(JNIEnv *env, jobject /* thiz
     
     if (pid == 0) {
         // Child Process
-        
-        // 5. LOG REDIRECTION (මෙතනදි තමයි wine_output.log හැදෙන්නේ)
         std::string logPath = appFilesDir + "/wine_output.log";
         int logFd = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
         if (logFd >= 0) {
-            dup2(logFd, STDOUT_FILENO); // stdout log එකට යවන්න
-            dup2(logFd, STDERR_FILENO); // stderr log එකට යවන්න
+            dup2(logFd, STDOUT_FILENO); 
+            dup2(logFd, STDERR_FILENO); 
             close(logFd);
         } else {
             LOGE("Failed to open log file!");
         }
 
-        // 6. PROOT_TMP_DIR නිවැරදි කිරීම (rootfs වෙනුවට appFilesDir)
         setenv("PROOT_TMP_DIR", tmpDir.c_str(), 1); 
         
-        // 7. Copy කළ proot එක run කිරීම
         execv(proot.c_str(), argv);
         
         LOGE("execv failed! Error code: %d (%s)", errno, strerror(errno));
@@ -119,10 +119,11 @@ Java_com_your_customemulator_MainActivity_startWine(JNIEnv *env, jobject /* thiz
         int status;
         waitpid(pid, &status, 0);
         
-        env->ReleaseStringUTFChars(jRootfs, rootfs);
-        env->ReleaseStringUTFChars(jProotPath, proot_orig);
-        env->ReleaseStringUTFChars(jBox64Path, box64_orig);
-        env->ReleaseStringUTFChars(jInstallerPath, installer);
+        // Memory Cleanup
+        env->ReleaseStringUTFChars(jArg1, rootfs);
+        env->ReleaseStringUTFChars(jArg2, proot_orig);
+        env->ReleaseStringUTFChars(jArg3, box64_orig);
+        env->ReleaseStringUTFChars(jArg4, installer);
         
         int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 255;
         LOGI("PRoot process exited with code: %d", exitCode);
