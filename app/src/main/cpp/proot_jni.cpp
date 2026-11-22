@@ -84,7 +84,6 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         setenv("PROOT_TMP_DIR", filesDir, 1);
         setenv("PROOT_NO_SECURE", "1", 1);
         
-        // --- අලුත් වෙනස්කම් (c0000135 Fix එක සඳහා) ---
         // Android Host path එක වෙනුවට PRoot Guest path එකක් Wineprefix ලෙස සකසමු
         setenv("WINEPREFIX", "/root/.wine", 1); 
         
@@ -96,10 +95,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         setenv("BOX64_PATH", "/opt/wine/bin", 1);
 
-        // මේක තමයි Android 14 වල noexec ප්‍රශ්නය Box64 හරහාම විසඳන ප්‍රධානම යතුර 
+        // Box64 සඳහා noexec/patch bypass variables 
         setenv("BOX64_MMAP_HACK", "1", 1);
-        
-        // Box64 සඳහා අලුත් noexec/patch bypass variables 
         setenv("BOX64_ALLOWMISSINGENV", "1", 1);
         setenv("BOX64_NOSIGILL", "1", 1);
         setenv("BOX64_NOBANNER", "1", 1);
@@ -107,10 +104,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
 
         setenv("WINEPRELOADRESERVE", "0x7ffffff40000-0x7fffffff0000", 1);
         
-        // අලුතින් extract කරපු /usr/lib/x86_64-linux-gnu path එකත් මෙතැනට එකතු කර ඇත
         setenv("BOX64_LD_LIBRARY_PATH", "/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/opt/wine/lib/wine/i386-unix", 1);
-        
-        // Wine වලට Windows DLL (.dll files) හොයාගැනීම සඳහා අනිවාර්ය Path එක 
         setenv("WINEDLLPATH", "/opt/wine/lib/wine/x86_64-windows:/opt/wine/lib/wine/i386-windows", 1);
         
         setenv("BOX64_LOG", "1", 1);
@@ -142,6 +136,10 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
         dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
         dprintf(STDERR_FILENO, "Wine (WoW64): %s\n", wine);
 
+        // අලුත් mmap_hook.so එක LD_PRELOAD හරහා Wine එකට Inject කිරීම සඳහා Shell කමාන්ඩ් එක හැදීම
+        std::string ldPreload = "export LD_PRELOAD=" + std::string(nativeDir) + "/libmmap_hook.so";
+        std::string shellCmd = ldPreload + " && export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"";
+
         char* const argv[] = {
                 (char*)"proot",
                 (char*)"--link2symlink",
@@ -158,8 +156,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(
                 
                 (char*)"/system/bin/sh",
                 (char*)"-c",
-                // Shell එක ඇතුලේ LD_LIBRARY_PATH එකට අලුත් path එකත් එකතු කළා
-                (char*)"export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"",
+                (char*)shellCmd.c_str(), // <--- අලුතින් හදපු Shell Command එක මෙතැනට දැම්මා
                 (char*)"sh",      
                 (char*)box64Src,  
                 (char*)"/opt/wine/bin/wine64", 
