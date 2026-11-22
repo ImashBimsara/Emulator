@@ -1,195 +1,97 @@
 #include <jni.h>
+#include <string>
 #include <unistd.h>
 #include <sys/wait.h>
-#include <sys/stat.h>
-#include <string>
 #include <android/log.h>
-#include <errno.h>
-#include <string.h>
 #include <stdlib.h>
-#include <fcntl.h>
-#include <sys/mman.h>
+#include <libgen.h>
+#include <string.h>
 
-#define LOG_TAG "ProotJNI"
-
-#define LOGI(...) \
-    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-
-#define LOGE(...) \
-    __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "EmulatorJNI", __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "EmulatorJNI", __VA_ARGS__)
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_your_customemulator_MainActivity_runProotJNI(
-        JNIEnv* env,
-        jobject,
-        jstring jProotLibPath,
-        jstring jRootfs,
-        jstring jWinePrefix,
-        jstring jBox64,
-        jstring jWine,
-        jstring jInstaller,
-        jstring jLogFilePath,
-        jstring jNativeLibDir,
-        jstring jFilesDir) {
+Java_com_your_customemulator_MainActivity_startWine(JNIEnv *env, jobject /* thiz */,
+                                                    jstring jRootfs, 
+                                                    jstring jProotPath, 
+                                                    jstring jBox64Path, 
+                                                    jstring jInstallerPath) {
 
-    // Convert JNI strings
-    const char* proot = env->GetStringUTFChars(jProotLibPath, nullptr);
-    const char* rootfs = env->GetStringUTFChars(jRootfs, nullptr);
-    const char* prefix = env->GetStringUTFChars(jWinePrefix, nullptr);
-    const char* box64Src = env->GetStringUTFChars(jBox64, nullptr);
-    const char* wine = env->GetStringUTFChars(jWine, nullptr);
-    const char* installer = env->GetStringUTFChars(jInstaller, nullptr);
-    const char* log = env->GetStringUTFChars(jLogFilePath, nullptr);
-    const char* nativeDir = env->GetStringUTFChars(jNativeLibDir, nullptr);
-    const char* filesDir = env->GetStringUTFChars(jFilesDir, nullptr);
+    // Java වලින් එන String දත්ත C++ const char* බවට හැරවීම
+    const char *rootfs = env->GetStringUTFChars(jRootfs, nullptr);
+    const char *proot = env->GetStringUTFChars(jProotPath, nullptr);
+    const char *box64 = env->GetStringUTFChars(jBox64Path, nullptr);
+    const char *installer = env->GetStringUTFChars(jInstallerPath, nullptr);
 
-    auto releaseStrings = [&]() {
-        if (proot) env->ReleaseStringUTFChars(jProotLibPath, proot);
-        if (rootfs) env->ReleaseStringUTFChars(jRootfs, rootfs);
-        if (prefix) env->ReleaseStringUTFChars(jWinePrefix, prefix);
-        if (box64Src) env->ReleaseStringUTFChars(jBox64, box64Src);
-        if (wine) env->ReleaseStringUTFChars(jWine, wine);
-        if (installer) env->ReleaseStringUTFChars(jInstaller, installer);
-        if (log) env->ReleaseStringUTFChars(jLogFilePath, log);
-        if (nativeDir) env->ReleaseStringUTFChars(jNativeLibDir, nativeDir);
-        if (filesDir) env->ReleaseStringUTFChars(jFilesDir, filesDir);
+    // Box64 Path එකෙන් nativeDir එක (උදා: /data/app/.../lib/arm64) වෙන්කර ගැනීම
+    char box64Copy[1024];
+    strncpy(box64Copy, box64, sizeof(box64Copy));
+    std::string nativeDir = dirname(box64Copy);
+
+    // 1. පිරිසිදු Shell Command එක (LD_PRELOAD නොමැතිව)
+    // මෙහිදී app එකේ nativeDir එක සහ Android/Ubuntu system paths පමණක් LD_LIBRARY_PATH වෙත ලබා දේ
+    std::string shellCmd = "export LD_LIBRARY_PATH=" + nativeDir + 
+                           ":/system/lib64:/system/lib" +
+                           ":/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix" +
+                           ":/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"";
+
+    // 2. PRoot සඳහා ලබාදෙන පිරිසිදු Arguments
+    char* const argv[] = {
+            (char*)"proot",
+            (char*)"--link2symlink",
+            (char*)"-0",
+            (char*)"-r", (char*)rootfs,
+            (char*)"-b", (char*)"/system",
+            (char*)"-b", (char*)"/apex",
+            (char*)"-b", (char*)"/vendor",
+            (char*)"-b", (char*)"/dev",
+            (char*)"-b", (char*)"/proc",
+            (char*)"-b", (char*)"/sys",
+            (char*)"-b", (char*)"/data",
+            (char*)"-w", (char*)"/",
+            
+            (char*)"/system/bin/sh",
+            (char*)"-c",
+            (char*)shellCmd.c_str(),
+            (char*)"sh",      
+            
+            (char*)box64,                    // Box64 ධාවනය කිරීම
+            (char*)"/opt/wine/bin/wine64",   // Wine64 ධාවනය කිරීම
+            (char*)installer,                // Windows .exe ෆයිල් එක
+            nullptr
     };
 
-    if (!proot || !rootfs || !prefix || !box64Src ||
-        !wine || !installer || !log || !nativeDir || !filesDir) {
-        LOGE("JNI string conversion failed");
-        releaseStrings();
-        return -1;
-    }
-
-    std::string ldPath = std::string(filesDir) + ":" + std::string(nativeDir);
-    LOGI("LD_LIBRARY_PATH: %s", ldPath.c_str());
-
+    LOGI("Starting PRoot process...");
+    
+    // Process එක Fork කිරීම
     pid_t pid = fork();
-
-    if (pid < 0) {
-        LOGE("fork failed: %s", strerror(errno));
-        releaseStrings();
-        return -2;
-    }
-
+    
     if (pid == 0) {
-        int fd = open(log, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-        if (fd >= 0) {
-            dup2(fd, STDOUT_FILENO);
-            dup2(fd, STDERR_FILENO);
-            close(fd);
-        }
-
-        setenv("PROOT_TMP_DIR", filesDir, 1);
-        setenv("PROOT_NO_SECURE", "1", 1);
-        
-        // Android Host path එක වෙනුවට PRoot Guest path එකක් Wineprefix ලෙස සකසමු
-        setenv("WINEPREFIX", "/root/.wine", 1); 
-        
-        // DLL loading logs සහ Errors සක්‍රිය කිරීම (-all වෙනුවට)
-        setenv("WINEDEBUG", "err+module,warn+module,+loaddll", 1);
-        
-        setenv("WINEARCH", "win64", 1);
-        setenv("DISPLAY", ":0", 1);
-
-        setenv("BOX64_PATH", "/opt/wine/bin", 1);
-
-        // Box64 සඳහා noexec/patch bypass variables 
-        setenv("BOX64_MMAP_HACK", "1", 1);
-        setenv("BOX64_ALLOWMISSINGENV", "1", 1);
-        setenv("BOX64_NOSIGILL", "1", 1);
-        setenv("BOX64_NOBANNER", "1", 1);
-        setenv("WINE_DISABLE_KERNEL_MODE", "1", 1); 
-
-        setenv("WINEPRELOADRESERVE", "0x7ffffff40000-0x7fffffff0000", 1);
-        
-        setenv("BOX64_LD_LIBRARY_PATH", "/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/opt/wine/lib/wine/i386-unix", 1);
-        setenv("WINEDLLPATH", "/opt/wine/lib/wine/x86_64-windows:/opt/wine/lib/wine/i386-windows", 1);
-        
-        setenv("BOX64_LOG", "1", 1);
-
-        std::string loaderPath = std::string(nativeDir) + "/libloader.so";
-        setenv("PROOT_LOADER", loaderPath.c_str(), 1);
-        setenv("PROOT_LOADER_64", loaderPath.c_str(), 1);
-
-        if (setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1) != 0) {
-            dprintf(STDERR_FILENO, "Failed to set LD_LIBRARY_PATH: %s\n", strerror(errno));
-            _exit(20);
-        }
-
-        struct stat st;
-        if (stat(proot, &st) != 0) {
-            dprintf(STDERR_FILENO, "Proot not found: %s\n", strerror(errno));
-            _exit(11);
-        }
-
-        std::string tallocPath = std::string(filesDir) + "/libtalloc.so.2";
-        if (stat(tallocPath.c_str(), &st) != 0) {
-            dprintf(STDERR_FILENO, "libtalloc.so.2 not found: %s\n", strerror(errno));
-            _exit(13);
-        }
-
-        dprintf(STDERR_FILENO, "Starting Proot with Native Box64, Loader Trampoline, and Android System SH env cleanup...\n");
-        dprintf(STDERR_FILENO, "Rootfs: %s\n", rootfs);
-        dprintf(STDERR_FILENO, "Box64 (Linux): %s\n", box64Src);
-        dprintf(STDERR_FILENO, "Loader: %s\n", loaderPath.c_str());
-        dprintf(STDERR_FILENO, "Wine (WoW64): %s\n", wine);
-
-        // mmap_hook එකේ path එක
-        std::string ldPreload = std::string(nativeDir) + "/libmmap_hook.so";
-        
-        // 1. Android Shell එකට දෙන LD_LIBRARY_PATH එක වෙනස් නොකර තබා ගනිමු
-        std::string shellCmd = "export LD_LIBRARY_PATH=" + std::string(nativeDir) + ":/system/lib64:/system/lib:/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"";
-        
-        // 2. PRoot එකට දෙන Arguments වෙනස් කිරීම (LD_PRELOAD එක Box64 එකට විතරක් සීමා කිරීම)
-        char* const argv[] = {
-                (char*)"proot",
-                (char*)"--link2symlink",
-                (char*)"-0",
-                (char*)"-r", (char*)rootfs,
-                (char*)"-b", (char*)"/system",
-                (char*)"-b", (char*)"/apex",
-                (char*)"-b", (char*)"/vendor",
-                (char*)"-b", (char*)"/dev",
-                (char*)"-b", (char*)"/proc",
-                (char*)"-b", (char*)"/sys",
-                (char*)"-b", (char*)"/data",
-                (char*)"-w", (char*)"/",
-                
-                (char*)"/system/bin/sh",
-                (char*)"-c",
-                (char*)shellCmd.c_str(),
-                (char*)"sh",      
-                // මෙන්න මෙතැනයි වෙනස: Box64 Run කරන්න කලින් LD_PRELOAD එක set කරනවා (env හරහා)
-                (char*)"env", 
-                (char*)(std::string("LD_PRELOAD=") + ldPreload).c_str(),
-                (char*)box64Src,  
-                (char*)"/opt/wine/bin/wine64", 
-                (char*)installer, 
-                nullptr
-        };
+        // Child Process - PRoot ධාවනය කිරීම
+        setenv("PROOT_TMP_DIR", rootfs, 1); 
         
         execv(proot, argv);
-        dprintf(STDERR_FILENO, "Proot execv failed: %s\n", strerror(errno));
-        _exit(12);
+        
+        // execv අසමත් වුවහොත් පමණක් මෙය ධාවනය වේ
+        LOGE("execv failed! Error code: %d", errno);
+        exit(127);
+    } else if (pid > 0) {
+        // Parent Process - Child අවසන් වනතුරු රැඳී සිටීම
+        int status;
+        waitpid(pid, &status, 0);
+        
+        // මතකය නිදහස් කිරීම (Memory Cleanup)
+        env->ReleaseStringUTFChars(jRootfs, rootfs);
+        env->ReleaseStringUTFChars(jProotPath, proot);
+        env->ReleaseStringUTFChars(jBox64Path, box64);
+        env->ReleaseStringUTFChars(jInstallerPath, installer);
+        
+        int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 255;
+        LOGI("PRoot process exited with code: %d", exitCode);
+        return exitCode;
+    } else {
+        // Fork අසමත් වූ විට
+        LOGE("Fork failed!");
+        return -1;
     }
-
-    int status = 0;
-    jint result = -3;
-
-    if (waitpid(pid, &status, 0) == -1) {
-        LOGE("waitpid failed: %s", strerror(errno));
-    } else if (WIFEXITED(status)) {
-        int exitCode = WEXITSTATUS(status);
-        LOGI("Proot exit code: %d", exitCode);
-        result = exitCode;
-    } else if (WIFSIGNALED(status)) {
-        int signalNumber = WTERMSIG(status);
-        LOGE("Proot killed by signal: %d", signalNumber);
-        result = -100 - signalNumber;
-    }
-
-    releaseStrings();
-    return result;
 }
