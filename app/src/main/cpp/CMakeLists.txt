@@ -9,6 +9,6 @@ target_link_libraries(prootjni
         android
         log)
 
-# පරණ එකට පහළින් මේ ටික දාන්න
 add_library(mmap_hook SHARED mmap_hook.cpp)
-target_link_libraries(mmap_hook log dl)
+# කලින් තිබුණ 'log' ඉවත් කර dl පමණක් තබන්න
+target_link_libraries(mmap_hook dl)
