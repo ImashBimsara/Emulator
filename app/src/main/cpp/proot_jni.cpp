@@ -31,31 +31,34 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
                                                     jstring jArg1, jstring jArg2, jstring jArg3, jstring jArg4,
                                                     jstring jArg5, jstring jArg6, jstring jArg7, jstring jArg8, jstring jArg9) {
 
-    std::string rootfs = getJString(env, jArg1);
-    std::string proot_lib = getJString(env, jArg2);
-    std::string box64_lib = getJString(env, jArg3);
-    std::string arg4 = getJString(env, jArg4);
-    std::string arg5 = getJString(env, jArg5);
-    std::string arg6 = getJString(env, jArg6);
-    std::string arg7 = getJString(env, jArg7);
-    std::string arg8 = getJString(env, jArg8);
-    std::string arg9 = getJString(env, jArg9);
+    // MainActivity.kt වෙතින් එවන නිවැරදි Parameter පිළිවෙළ:
+    std::string proot_lib  = getJString(env, jArg1); // /data/app/.../lib/arm64/libproot.so
+    std::string rootfs     = getJString(env, jArg2); // /data/user/0/.../files/imagefs/rootfs
+    std::string wineprefix = getJString(env, jArg3); // /data/user/0/.../files/wineprefix
+    std::string box64_lib  = getJString(env, jArg4); // /data/app/.../lib/arm64/libbox64.so
+    std::string wine_path  = getJString(env, jArg5); // /opt/wine/bin/wine64
+    std::string arg6       = getJString(env, jArg6);
+    std::string arg7       = getJString(env, jArg7);
+    std::string arg8       = getJString(env, jArg8);
+    std::string arg9       = getJString(env, jArg9);
 
-    std::string internalFilesDir = "/data/data/com.your.customemulator/files";
+    if (wineprefix.empty()) wineprefix = "/root/.wine";
+    if (wine_path.empty()) wine_path = "/opt/wine/bin/wine64";
+
+    std::string internalFilesDir = "/data/user/0/com.your.customemulator/files";
     std::string logPath = "/storage/emulated/0/Android/data/com.your.customemulator/files/wine_output.log";
 
-    char box64Copy[1024];
-    strncpy(box64Copy, box64_lib.c_str(), sizeof(box64Copy) - 1);
-    box64Copy[sizeof(box64Copy) - 1] = '\0';
-    std::string nativeDir = dirname(box64Copy);
+    char prootCopy[1024];
+    strncpy(prootCopy, proot_lib.c_str(), sizeof(prootCopy) - 1);
+    prootCopy[sizeof(prootCopy) - 1] = '\0';
+    std::string nativeDir = dirname(prootCopy);
 
     std::string loaderPath = nativeDir + "/libproot-loader.so";
     std::string loader32Path = nativeDir + "/libproot-loader32.so";
 
-    // Guest (Box64 + Wine) boot වීමට අවශ්‍ය Environment Variables සහ Debug trace
-    std::string shellCmd = "echo '[GUEST SHELL] Started inside PRoot!' >&2 && "
-                           "export DISPLAY=:0 && "
-                           "export WINEPREFIX=/root/.wine && "
+    // Guest (Box64 + Wine) boot වීමට අවශ්‍ය Environment Variables
+    std::string shellCmd = "export DISPLAY=:0 && "
+                           "export WINEPREFIX=\"" + wineprefix + "\" && "
                            "export WINEDEBUG=-all,err+all && "
                            "export BOX64_LOG=1 && "
                            "export BOX64_LD_LIBRARY_PATH=/opt/wine/lib/wine/x86_64-unix:/usr/lib/x86_64-linux-gnu && "
@@ -66,12 +69,10 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
                            "elif [ -f /usr/lib/libandroid-shmem.so ]; then "
                            "export LD_PRELOAD=/usr/lib/libandroid-shmem.so; "
                            "fi && "
-                           "echo '[GUEST SHELL] Launching Box64 + Wine...' >&2 && "
                            "exec \"$@\"";
 
     std::vector<const char*> proot_args = {
             proot_lib.c_str(),
-            "-v", "9",
             "--link2symlink",
             "-0",
             "-r", rootfs.c_str(),
@@ -88,12 +89,12 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             shellCmd.c_str(),
             "sh",
             box64_lib.c_str(),
-            "/opt/wine/bin/wine64"
+            wine_path.c_str()
     };
 
-    // arg4 හිස් නොවේ නම් පමණක් argument එකක් ලෙස එකතු කිරීම
-    if (!arg4.empty()) {
-        proot_args.push_back(arg4.c_str());
+    // arg6 හි .exe හෝ wine command එකක් ඇත්නම් පමණක් එකතු කිරීම
+    if (!arg6.empty() && arg6[0] != ':') {
+        proot_args.push_back(arg6.c_str());
     }
     proot_args.push_back(nullptr);
 
@@ -111,9 +112,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             close(logFd);
         }
 
-        fprintf(stderr, "[JNI ARGS] 1='%s' | 2='%s' | 3='%s' | 4='%s' | 5='%s'\n",
-                rootfs.c_str(), proot_lib.c_str(), box64_lib.c_str(), arg4.c_str(), arg5.c_str());
+        fprintf(stderr, "[JNI ARGS] 1='%s' | 2='%s' | 3='%s' | 4='%s' | 5='%s' | 6='%s' | 7='%s' | 8='%s' | 9='%s'\n",
+                proot_lib.c_str(), rootfs.c_str(), wineprefix.c_str(), box64_lib.c_str(),
+                wine_path.c_str(), arg6.c_str(), arg7.c_str(), arg8.c_str(), arg9.c_str());
 
+        // Host linker එකට libtalloc.so.2 සොයාගැනීමට paths ලබා දීම
         std::string hostLdPath = nativeDir + ":" + internalFilesDir;
         setenv("LD_LIBRARY_PATH", hostLdPath.c_str(), 1);
         setenv("PROOT_TMP_DIR", internalFilesDir.c_str(), 1);
@@ -126,7 +129,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             setenv("PROOT_LOADER_32", loader32Path.c_str(), 1);
         }
 
-        // /system/bin/linker64 හරහා libproot.so ධාවනය කිරීම
+        // 1. Direct execve (targetSdk=28 සමඟ libproot.so කෙලින්ම ක්‍රියාත්මක වේ)
+        execve(proot_lib.c_str(), (char* const*)proot_args.data(), environ);
+        fprintf(stderr, "1. Direct execve failed: errno=%d (%s)\n", errno, strerror(errno));
+
+        // 2. Fallback: /system/bin/linker64 හරහා ධාවනය කිරීම
         std::vector<char*> linker_argv;
         linker_argv.push_back((char*)"/system/bin/linker64");
         for (size_t i = 0; proot_args[i] != nullptr; i++) {
@@ -135,7 +142,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
         linker_argv.push_back(nullptr);
 
         execve("/system/bin/linker64", linker_argv.data(), environ);
-        fprintf(stderr, "Linker64 execve failed: errno=%d (%s)\n", errno, strerror(errno));
+        fprintf(stderr, "2. Linker64 execve failed: errno=%d (%s)\n", errno, strerror(errno));
 
         _exit(127);
 
