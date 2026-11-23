@@ -38,7 +38,7 @@ jobs:
             chmod +x *.so
           fi
 
-      - name: Compile Clean PRoot from Synced Fork
+      - name: Compile Static Talloc & Termux PRoot for Android ARM64
         run: |
           mkdir -p /tmp/proot_build && cd /tmp/proot_build
 
@@ -47,46 +47,55 @@ jobs:
           unzip -q android-ndk-r25c-linux.zip
           NDK_HOME="/tmp/proot_build/android-ndk-r25c"
 
-          # 2. Download ARM64 libtalloc
-          mkdir -p sysroot
-          BASE_URL="http://ftp.debian.org/debian/pool/main/t/talloc"
-          TALLOC_DEB=$(curl -sL "$BASE_URL/" | grep -oE 'libtalloc2_[^"]+_arm64\.deb' | sort -V | tail -n 1)
-          TALLOC_DEV_DEB=$(curl -sL "$BASE_URL/" | grep -oE 'libtalloc-dev_[^"]+_arm64\.deb' | sort -V | tail -n 1)
-          wget -q "$BASE_URL/$TALLOC_DEB" "$BASE_URL/$TALLOC_DEV_DEB"
-          dpkg-deb -x "$TALLOC_DEB" sysroot/
-          dpkg-deb -x "$TALLOC_DEV_DEB" sysroot/
-          (cd sysroot/usr/lib/aarch64-linux-gnu && ln -sf $(ls libtalloc.so.2.* | head -n 1) libtalloc.so)
-
-          # 3. Clone and Cross-Compile Synced PRoot
-          git clone --depth 1 https://github.com/ImashBimsara/proot.git
-          cd proot
-
           TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          SYSROOT="/tmp/proot_build/sysroot"
-
           export CC="$TOOLCHAIN/aarch64-linux-android24-clang"
-          export LD="$TOOLCHAIN/aarch64-linux-android24-clang"
+          export AR="$TOOLCHAIN/llvm-ar"
           export STRIP="$TOOLCHAIN/llvm-strip"
           export OBJCOPY="$TOOLCHAIN/llvm-objcopy"
           export OBJDUMP="$TOOLCHAIN/llvm-objdump"
 
-          export CFLAGS="-O3 -fPIE -I$SYSROOT/usr/include -DARG_MAX=131072"
-          export LDFLAGS="-pie -L$SYSROOT/usr/lib/aarch64-linux-gnu -ltalloc"
+          # 2. Compile Talloc statically with Android NDK (avoids glibc libc.so.6 crash)
+          wget -q https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz
+          tar -xzf talloc-2.4.2.tar.gz
+          cd talloc-2.4.2
+          cat << 'EOF' > config.h
+          #define HAVE_VA_COPY 1
+          #define HAVE_STRNLEN 1
+          #define HAVE_STRDUP 1
+          #define HAVE_STRNDUP 1
+          #define HAVE_STRLCPY 1
+          #define HAVE_STRLCAT 1
+          #define HAVE_MEMMEM 1
+          #define HAVE_SYS_AUXV_H 1
+          #define HAVE_GETAUXVAL 1
+          #define _GNU_SOURCE 1
+          #define memset_s(d, ds, c, n) memset((d), (c), (n))
+          EOF
+          $CC -O3 -fPIE -I. -Ilib/replace -DHAVE_CONFIG_H -c talloc.c -o talloc.o
+          $AR rcs libtalloc.a talloc.o
+          TALLOC_DIR=$(pwd)
+          cd ..
 
-          make -C src proot \
+          # 3. Clone and Cross-Compile Termux PRoot + Loader
+          git clone --depth 1 https://github.com/termux/proot.git termux-proot
+          cd termux-proot
+
+          make -C src proot loader \
             CC="$CC" \
-            LD="$LD" \
+            LD="$CC" \
             STRIP="$STRIP" \
             OBJCOPY="$OBJCOPY" \
             OBJDUMP="$OBJDUMP" \
             HAS_LOADER_32BIT="" \
-            CFLAGS="$CFLAGS" \
-            LDFLAGS="$LDFLAGS"
+            CFLAGS="-O3 -fPIE -I. -I$TALLOC_DIR -DARG_MAX=131072 -D__ANDROID__" \
+            LDFLAGS="-pie $TALLOC_DIR/libtalloc.a"
 
-          # 4. Overwrite old libproot.so in jniLibs
+          # 4. Copy libproot.so and libproot-loader.so into jniLibs
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           cp src/proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
-          cp -L "$SYSROOT/usr/lib/aarch64-linux-gnu/libtalloc.so.2" "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libtalloc.so.2"
+          cp src/loader/loader "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot-loader.so"
           chmod +x "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
+          chmod +x "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot-loader.so"
           rm -rf /tmp/proot_build
 
       - name: Combine Rootfs and Replace Old Wine
