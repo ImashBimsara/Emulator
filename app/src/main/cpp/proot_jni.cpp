@@ -8,18 +8,49 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <fstream>
-#include <iostream>
+#include <sys/syscall.h>
+#include <sys/mman.h>
+#include <errno.h>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "EmulatorJNI", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "EmulatorJNI", __VA_ARGS__)
 
-bool copyFile(const char* src, const char* dst) {
-    std::ifstream srcFile(src, std::ios::binary);
-    std::ofstream dstFile(dst, std::ios::binary);
-    if (!srcFile || !dstFile) return false;
-    dstFile << srcFile.rdbuf();
-    return true;
+extern char **environ;
+
+// libproot.so එක RAM එකට load කරලා run කරන function එක
+int execute_memfd(const char* path, char* const argv[]) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        LOGE("Failed to open proot: %s (errno=%d)", path, errno);
+        return -1;
+    }
+
+    int mem_fd = syscall(279, "proot_exec", 1); // 279 = memfd_create
+    if (mem_fd < 0) {
+        LOGE("memfd_create failed! errno=%d", errno);
+        close(fd);
+        return -1;
+    }
+
+    char buf[8192];
+    ssize_t n;
+    while ((n = read(fd, buf, sizeof(buf))) > 0) {
+        if (write(mem_fd, buf, n) != n) {
+            LOGE("Failed to write to memfd! errno=%d", errno);
+            close(fd); close(mem_fd); return -1;
+        }
+    }
+    close(fd);
+
+    // 🔥 මේක අත්‍යවශ්‍යයි: memfd එකට execute permission දෙනවා
+    fchmod(mem_fd, 0700); 
+
+    // RAM එකෙන් run කරනවා
+    fexecve(mem_fd, argv, environ);
+    
+    LOGE("fexecve failed! errno=%d (%s)", errno, strerror(errno));
+    close(mem_fd);
+    return -1;
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -28,36 +59,14 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
                                                     jstring jArg5, jstring jArg6, jstring jArg7, jstring jArg8, jstring jArg9) {
 
     const char *rootfs = env->GetStringUTFChars(jArg1, nullptr);
-    const char *proot_orig = env->GetStringUTFChars(jArg2, nullptr);
-    const char *box64_orig = env->GetStringUTFChars(jArg3, nullptr);
+    const char *proot_lib = env->GetStringUTFChars(jArg2, nullptr);
+    const char *box64_lib = env->GetStringUTFChars(jArg3, nullptr);
     const char *installer = env->GetStringUTFChars(jArg4, nullptr);
 
-    // අපි දැන් ලොග් එක ලියන්නේ Download ෆෝල්ඩරයට. එතකොට අපිට ලේසියෙන්ම ගන්න පුළුවන්.
-    std::string logPath = "/storage/emulated/0/Download/wine_output.log";
+    std::string logPath = "/data/data/com.your.customemulator/files/wine_output.log";
     
-    // 1. Fork එකට කලින්ම log file එක හදමු
-    int logFd = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
-    if (logFd >= 0) {
-        LOGI("Log file created at: %s", logPath.c_str());
-    } else {
-        LOGE("Failed to create log file! errno=%d", errno);
-    }
-
-    std::string appFilesDir = "/data/data/com.your.customemulator/files";
-    std::string tmpDir = appFilesDir + "/tmp";
-    mkdir(appFilesDir.c_str(), 0777);
-    mkdir(tmpDir.c_str(), 0777);
-
-    std::string proot = appFilesDir + "/proot";
-    std::string box64 = appFilesDir + "/box64";
-    
-    copyFile(proot_orig, proot.c_str());
-    chmod(proot.c_str(), 0755);
-    copyFile(box64_orig, box64.c_str());
-    chmod(box64.c_str(), 0755);
-
     char box64Copy[1024];
-    strncpy(box64Copy, box64_orig, sizeof(box64Copy));
+    strncpy(box64Copy, box64_lib, sizeof(box64Copy));
     std::string nativeDir = dirname(box64Copy);
 
     std::string shellCmd = "export LD_LIBRARY_PATH=" + nativeDir + 
@@ -65,52 +74,65 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
                            ":/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix" +
                            ":/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"";
 
+    // 🔥 වෙනස: මෙතන argv[0] එකට දෙන්නේ proot_lib path එක (path එක හොයාගන්න "proot" කියලා දුන්නම crash වෙනවා)
     char* const argv[] = {
-            (char*)"proot", (char*)"--link2symlink", (char*)"-0",
-            (char*)"-r", (char*)rootfs, (char*)"-b", (char*)"/system", (char*)"-b", (char*)"/apex",
-            (char*)"-b", (char*)"/vendor", (char*)"-b", (char*)"/dev", (char*)"-b", (char*)"/proc",
-            (char*)"-b", (char*)"/sys", (char*)"-b", (char*)"/data", (char*)"-w", (char*)"/",
-            (char*)"/system/bin/sh", (char*)"-c", (char*)shellCmd.c_str(), (char*)"sh",      
-            (char*)box64.c_str(), (char*)"/opt/wine/bin/wine64", (char*)installer, nullptr
+            (char*)proot_lib, 
+            (char*)"--link2symlink", 
+            (char*)"-0",
+            (char*)"-r", (char*)rootfs, 
+            (char*)"-b", (char*)"/system", 
+            (char*)"-b", (char*)"/apex",
+            (char*)"-b", (char*)"/vendor", 
+            (char*)"-b", (char*)"/dev", 
+            (char*)"-b", (char*)"/proc",
+            (char*)"-b", (char*)"/sys", 
+            (char*)"-b", (char*)"/data", 
+            (char*)"-w", (char*)"/",
+            (char*)"/system/bin/sh", 
+            (char*)"-c", 
+            (char*)shellCmd.c_str(), 
+            (char*)"sh",      
+            (char*)box64_lib, 
+            (char*)"/opt/wine/bin/wine64", 
+            (char*)installer, 
+            nullptr
     };
 
-    LOGI("Starting PRoot process...");
+    LOGI("Starting PRoot via Memfd...");
     
     pid_t pid = fork();
     
     if (pid == 0) {
         // Child Process
+        int logFd = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
         if (logFd >= 0) {
             dup2(logFd, STDOUT_FILENO); 
             dup2(logFd, STDERR_FILENO); 
             close(logFd);
+        } else {
+            LOGE("Failed to open log file! errno=%d", errno);
         }
-        setenv("PROOT_TMP_DIR", tmpDir.c_str(), 1); 
+
+        execute_memfd(proot_lib, argv);
         
-        LOGI("Executing proot...");
-        execv(proot.c_str(), argv);
-        
-        LOGE("execv failed! Error code: %d (%s)", errno, strerror(errno));
         exit(127);
         
     } else if (pid > 0) {
-        if (logFd >= 0) close(logFd); // Parent එකේ fd එක close කරන්න
-        
         int status;
         waitpid(pid, &status, 0);
         
         if (WIFSIGNALED(status)) {
-            LOGE("Child was killed by signal: %d", WTERMSIG(status));
+            LOGE("Proot killed by signal: %d", WTERMSIG(status));
         } else if (WIFEXITED(status)) {
-            LOGI("Child exited normally with code: %d", WEXITSTATUS(status));
+            LOGI("Proot exited with code: %d", WEXITSTATUS(status));
         }
         
         env->ReleaseStringUTFChars(jArg1, rootfs);
-        env->ReleaseStringUTFChars(jArg2, proot_orig);
-        env->ReleaseStringUTFChars(jArg3, box64_orig);
+        env->ReleaseStringUTFChars(jArg2, proot_lib);
+        env->ReleaseStringUTFChars(jArg3, box64_lib);
         env->ReleaseStringUTFChars(jArg4, installer);
         
-        return 255; // සාමාන්‍යයෙන් 255 වෙනුවට exit code එක return කරන්න
+        return WIFEXITED(status) ? WEXITSTATUS(status) : 255;
     } else {
         LOGE("Fork failed!");
         return -1;
