@@ -35,8 +35,60 @@ jobs:
           if [ -f libs.zip ]; then
             unzip -o libs.zip
             rm libs.zip
+            chmod +x *.so
           fi
-      
+
+      - name: Compile Clean PRoot from Synced Fork
+        run: |
+          mkdir -p /tmp/proot_build && cd /tmp/proot_build
+
+          # 1. Download Android NDK r25c
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          unzip -q android-ndk-r25c-linux.zip
+          NDK_HOME="/tmp/proot_build/android-ndk-r25c"
+
+          # 2. Download ARM64 libtalloc
+          mkdir -p sysroot
+          BASE_URL="http://ftp.debian.org/debian/pool/main/t/talloc"
+          TALLOC_DEB=$(curl -sL "$BASE_URL/" | grep -oE 'libtalloc2_[^"]+_arm64\.deb' | sort -V | tail -n 1)
+          TALLOC_DEV_DEB=$(curl -sL "$BASE_URL/" | grep -oE 'libtalloc-dev_[^"]+_arm64\.deb' | sort -V | tail -n 1)
+          wget -q "$BASE_URL/$TALLOC_DEB" "$BASE_URL/$TALLOC_DEV_DEB"
+          dpkg-deb -x "$TALLOC_DEB" sysroot/
+          dpkg-deb -x "$TALLOC_DEV_DEB" sysroot/
+          (cd sysroot/usr/lib/aarch64-linux-gnu && ln -sf $(ls libtalloc.so.2.* | head -n 1) libtalloc.so)
+
+          # 3. Clone and Cross-Compile Synced PRoot
+          git clone --depth 1 https://github.com/ImashBimsara/proot.git
+          cd proot
+
+          TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          SYSROOT="/tmp/proot_build/sysroot"
+
+          export CC="$TOOLCHAIN/aarch64-linux-android24-clang"
+          export LD="$TOOLCHAIN/aarch64-linux-android24-clang"
+          export STRIP="$TOOLCHAIN/llvm-strip"
+          export OBJCOPY="$TOOLCHAIN/llvm-objcopy"
+          export OBJDUMP="$TOOLCHAIN/llvm-objdump"
+
+          export CFLAGS="-O3 -fPIE -I$SYSROOT/usr/include -DARG_MAX=131072"
+          export LDFLAGS="-pie -L$SYSROOT/usr/lib/aarch64-linux-gnu -ltalloc"
+
+          make -C src proot \
+            CC="$CC" \
+            LD="$LD" \
+            STRIP="$STRIP" \
+            OBJCOPY="$OBJCOPY" \
+            OBJDUMP="$OBJDUMP" \
+            HAS_LOADER_32BIT="" \
+            CFLAGS="$CFLAGS" \
+            LDFLAGS="$LDFLAGS"
+
+          # 4. Overwrite old libproot.so in jniLibs
+          cp src/proot "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
+          cp -L "$SYSROOT/usr/lib/aarch64-linux-gnu/libtalloc.so.2" "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libtalloc.so.2"
+          chmod +x "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libproot.so"
+          rm -rf /tmp/proot_build
+
       - name: Combine Rootfs and Replace Old Wine
         run: |
           echo "Merging rootfs and wine parts from assets..."
@@ -75,10 +127,8 @@ jobs:
           echo "Injecting NEW Custom Wine..."
           tar -xzf temp_wine.tar.gz -C rootfs_workspace/
     
-          # --- මේක තමයි අලුත් කෑල්ල ---
           echo "Creating wine64 copy for Box64 compatibility..."
           cp rootfs_workspace/opt/wine/bin/wine rootfs_workspace/opt/wine/bin/wine64
-          # ------------------------
     
           echo "Re-compressing into final rootfs.tzst with HIGH Compression..."
           cd rootfs_workspace
