@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <string>
+#include <vector>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <android/log.h>
@@ -18,7 +19,7 @@
 
 extern char **environ;
 
-// Android 10-15 SELinux/noexec bypass: libproot.so RAM එකට copy කර memfd හරහා run කිරීම
+// Fallback: memfd හරහා execute කිරීමට උත්සාහ කිරීම
 int execute_memfd(const char* path, char* const argv[]) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
@@ -51,12 +52,10 @@ int execute_memfd(const char* path, char* const argv[]) {
     // 281 = SYS_execveat (ARM64), 0x1000 = AT_EMPTY_PATH
     syscall(281, mem_fd, "", argv, environ, 0x1000);
 
-    // Fallback: /proc/self/fd හරහා උත්සාහ කිරීම
     char proc_path[64];
     snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%d", mem_fd);
     execve(proc_path, argv, environ);
 
-    fprintf(stderr, "memfd execve failed! errno=%d (%s)\n", errno, strerror(errno));
     close(mem_fd);
     return -1;
 }
@@ -79,6 +78,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
     box64Copy[sizeof(box64Copy) - 1] = '\0';
     std::string nativeDir = dirname(box64Copy);
 
+    std::string loaderPath = nativeDir + "/libproot-loader.so";
+    std::string loader32Path = nativeDir + "/libproot-loader32.so";
+
     // Guest (Box64 + Wine) boot වීමට අවශ්‍ය Environment Variables
     std::string shellCmd = "export DISPLAY=:0 && "
                            "export WINEPREFIX=/root/.wine && "
@@ -86,7 +88,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
                            "export BOX64_LD_LIBRARY_PATH=/opt/wine/lib/wine/x86_64-unix:/usr/lib/x86_64-linux-gnu && "
                            "export LD_LIBRARY_PATH=" + nativeDir + ":" + internalFilesDir +
                            ":/system/lib64:/system/lib:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && "
-                           "if [ -f " + internalFilesDir + "/libandroid-shmem.so ]; then export LD_PRELOAD=" + internalFilesDir + "/libandroid-shmem.so; fi && "
+                           "if [ -f " + internalFilesDir + "/libandroid-shmem.so ]; then "
+                           "export LD_PRELOAD=" + internalFilesDir + "/libandroid-shmem.so; "
+                           "elif [ -f /usr/lib/libandroid-shmem.so ]; then "
+                           "export LD_PRELOAD=/usr/lib/libandroid-shmem.so; "
+                           "fi && "
                            "exec \"$@\"";
 
     char* const argv[] = {
@@ -112,7 +118,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             nullptr
     };
 
-    LOGI("Starting Termux PRoot via Memfd...");
+    LOGI("Starting PRoot (Direct execve primary)...");
 
     pid_t pid = fork();
 
@@ -132,11 +138,34 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
         std::string hostLdPath = nativeDir + ":" + internalFilesDir;
         setenv("LD_LIBRARY_PATH", hostLdPath.c_str(), 1);
         setenv("PROOT_TMP_DIR", internalFilesDir.c_str(), 1);
-
-        // Termux PRoot සඳහා android noexec bypass flag
         setenv("PROOT_NO_SECCOMP", "1", 1);
 
+        // Native lib folder එකේ ඇති PRoot loaders යොමු කිරීම
+        if (access(loaderPath.c_str(), F_OK) == 0) {
+            setenv("PROOT_LOADER", loaderPath.c_str(), 1);
+        }
+        if (access(loader32Path.c_str(), F_OK) == 0) {
+            setenv("PROOT_LOADER_32", loader32Path.c_str(), 1);
+        }
+
+        // 1. Direct execve (targetSdk 28 සමඟ කෙලින්ම ක්‍රියාත්මක වේ)
+        execve(proot_lib, argv, environ);
+        fprintf(stderr, "1. Direct execve failed: errno=%d (%s)\n", errno, strerror(errno));
+
+        // 2. Linker64 fallback
+        std::vector<char*> linker_argv;
+        linker_argv.push_back((char*)"/system/bin/linker64");
+        for (int i = 0; argv[i] != nullptr; i++) {
+            linker_argv.push_back(argv[i]);
+        }
+        linker_argv.push_back(nullptr);
+
+        execve("/system/bin/linker64", linker_argv.data(), environ);
+        fprintf(stderr, "2. Linker64 execve failed: errno=%d (%s)\n", errno, strerror(errno));
+
+        // 3. Memfd fallback
         execute_memfd(proot_lib, argv);
+        fprintf(stderr, "3. Memfd execve failed: errno=%d (%s)\n", errno, strerror(errno));
 
         // Multithreaded fork එකකදී exit() වෙනුවට _exit() භාවිතා කිරීමෙන් SIGSEGV වළක්වයි
         _exit(127);
