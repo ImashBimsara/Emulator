@@ -26,15 +26,16 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
     const char *box64_lib = env->GetStringUTFChars(jArg3, nullptr);
     const char *installer = env->GetStringUTFChars(jArg4, nullptr);
 
-    std::string appFilesDir = "/data/data/com.your.customemulator/files";
-    std::string logPath = appFilesDir + "/wine_output.log";
+    std::string internalFilesDir = "/data/data/com.your.customemulator/files";
+    // emulator_log එකට ගැළපෙන external log path එක
+    std::string logPath = "/storage/emulated/0/Android/data/com.your.customemulator/files/wine_output.log";
 
     char box64Copy[1024];
     strncpy(box64Copy, box64_lib, sizeof(box64Copy) - 1);
     box64Copy[sizeof(box64Copy) - 1] = '\0';
     std::string nativeDir = dirname(box64Copy);
+    std::string loaderPath = nativeDir + "/libproot-loader.so";
 
-    // Guest (Box64 + Wine) සඳහා LD_LIBRARY_PATH සකස් කිරීම
     std::string shellCmd = "export LD_LIBRARY_PATH=" + nativeDir +
                            ":/system/lib64:/system/lib" +
                            ":/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix" +
@@ -63,41 +64,43 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             nullptr
     };
 
-    LOGI("Starting PRoot directly from native library directory...");
-
     pid_t pid = fork();
 
     if (pid == 0) {
-        // Child Process
         int logFd = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+        if (logFd < 0) {
+            // External storage අවසර නැතිනම් internal files වෙත fallback වීම
+            logPath = internalFilesDir + "/wine_output.log";
+            logFd = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+        }
         if (logFd >= 0) {
             dup2(logFd, STDOUT_FILENO);
             dup2(logFd, STDERR_FILENO);
             close(logFd);
-        } else {
-            LOGE("Failed to open log file! errno=%d", errno);
         }
 
-        // libproot.so ආරම්භ වන විට libtalloc.so.2 සොයාගැනීමට host LD_LIBRARY_PATH සැකසීම
         setenv("LD_LIBRARY_PATH", nativeDir.c_str(), 1);
+        setenv("PROOT_TMP_DIR", internalFilesDir.c_str(), 1);
+        // Android 10+ noexec bypass කිරීමට native lib folder එකේ ඇති loader එක පෙන්වීම
+        setenv("PROOT_LOADER", loaderPath.c_str(), 1);
 
-        // Android වල /tmp නොමැති නිසා PRoot (--link2symlink) සඳහා writable temp folder එකක් දීම
-        setenv("PROOT_TMP_DIR", appFilesDir.c_str(), 1);
-
-        // Seccomp block වීම වළක්වා ගැනීමට කෙලින්ම execve භාවිතය
         execve(proot_lib, argv, environ);
 
-        // execve අසාර්ථක වුවහොත් පමණක් පහත code එක ක්‍රියාත්මක වේ
-        LOGE("execve failed! errno=%d (%s)", errno, strerror(errno));
+        fprintf(stderr, "execve failed! errno=%d (%s)\n", errno, strerror(errno));
         exit(127);
 
     } else if (pid > 0) {
-        // Parent Process
         int status;
         waitpid(pid, &status, 0);
 
         if (WIFSIGNALED(status)) {
-            LOGE("Proot killed by signal: %d", WTERMSIG(status));
+            int sig = WTERMSIG(status);
+            LOGE("Proot killed by signal: %d", sig);
+            FILE *f = fopen(logPath.c_str(), "a");
+            if (f) {
+                fprintf(f, "\n[JNI ERROR] Proot process killed by signal: %d (%s)\n", sig, strsignal(sig));
+                fclose(f);
+            }
         } else if (WIFEXITED(status)) {
             LOGI("Proot exited with code: %d", WEXITSTATUS(status));
         }
@@ -107,9 +110,8 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
         env->ReleaseStringUTFChars(jArg3, box64_lib);
         env->ReleaseStringUTFChars(jArg4, installer);
 
-        return WIFEXITED(status) ? WEXITSTATUS(status) : 255;
+        return WIFEXITED(status) ? WEXITSTATUS(status) : (128 + WTERMSIG(status));
     } else {
-        LOGE("Fork failed!");
         env->ReleaseStringUTFChars(jArg1, rootfs);
         env->ReleaseStringUTFChars(jArg2, proot_lib);
         env->ReleaseStringUTFChars(jArg3, box64_lib);
