@@ -11,13 +11,14 @@
 #include <sys/syscall.h>
 #include <sys/mman.h>
 #include <errno.h>
+#include <stdio.h>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "EmulatorJNI", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "EmulatorJNI", __VA_ARGS__)
 
 extern char **environ;
 
-// libproot.so එක RAM එකට load කරලා run කරන function එක
+// libproot.so එක RAM එකට load කරලා run කරන function එක (Android 10+ Bypass)
 int execute_memfd(const char* path, char* const argv[]) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
@@ -45,10 +46,18 @@ int execute_memfd(const char* path, char* const argv[]) {
     // 🔥 මේක අත්‍යවශ්‍යයි: memfd එකට execute permission දෙනවා
     fchmod(mem_fd, 0700); 
 
-    // RAM එකෙන් run කරනවා
-    fexecve(mem_fd, argv, environ);
+    // 🔥 Android NDK එකේ fexecve නැති නිසා, අපි execveat syscall එක පාවිච්චි කරනවා
+    // SYS_execveat = 281 (ARM64). AT_EMPTY_PATH = 0x1000
+    syscall(281, mem_fd, "", argv, environ, 0x1000);
     
-    LOGE("fexecve failed! errno=%d (%s)", errno, strerror(errno));
+    // ඒකෙන් fail වුණොත් (සමහර පරණ කර්නල් වල), අපි /proc/self/fd හරහා try කරනවා
+    LOGE("execveat failed! errno=%d (%s). Trying /proc/self/fd...", errno, strerror(errno));
+    
+    char proc_path[64];
+    snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%d", mem_fd);
+    execve(proc_path, argv, environ);
+
+    LOGE("execve failed entirely! errno=%d (%s)", errno, strerror(errno));
     close(mem_fd);
     return -1;
 }
