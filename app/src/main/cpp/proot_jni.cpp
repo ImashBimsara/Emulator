@@ -8,6 +8,8 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
+#include <sys/mman.h>
 #include <errno.h>
 #include <stdio.h>
 
@@ -15,6 +17,49 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "EmulatorJNI", __VA_ARGS__)
 
 extern char **environ;
+
+// Android 10-15 SELinux/noexec bypass: libproot.so RAM එකට copy කර memfd හරහා run කිරීම
+int execute_memfd(const char* path, char* const argv[]) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        fprintf(stderr, "Failed to open proot: %s (errno=%d: %s)\n", path, errno, strerror(errno));
+        return -1;
+    }
+
+    // 279 = SYS_memfd_create (ARM64), 1 = MFD_CLOEXEC
+    int mem_fd = syscall(279, "proot_exec", 1);
+    if (mem_fd < 0) {
+        fprintf(stderr, "memfd_create failed! errno=%d (%s)\n", errno, strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    char buf[8192];
+    ssize_t n;
+    while ((n = read(fd, buf, sizeof(buf))) > 0) {
+        if (write(mem_fd, buf, n) != n) {
+            fprintf(stderr, "Failed to write to memfd! errno=%d (%s)\n", errno, strerror(errno));
+            close(fd);
+            close(mem_fd);
+            return -1;
+        }
+    }
+    close(fd);
+
+    fchmod(mem_fd, 0700);
+
+    // 281 = SYS_execveat (ARM64), 0x1000 = AT_EMPTY_PATH
+    syscall(281, mem_fd, "", argv, environ, 0x1000);
+
+    // Fallback: /proc/self/fd හරහා උත්සාහ කිරීම
+    char proc_path[64];
+    snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%d", mem_fd);
+    execve(proc_path, argv, environ);
+
+    fprintf(stderr, "memfd execve failed! errno=%d (%s)\n", errno, strerror(errno));
+    close(mem_fd);
+    return -1;
+}
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* thiz */,
@@ -27,19 +72,22 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
     const char *installer = env->GetStringUTFChars(jArg4, nullptr);
 
     std::string internalFilesDir = "/data/data/com.your.customemulator/files";
-    // emulator_log එකට ගැළපෙන external log path එක
     std::string logPath = "/storage/emulated/0/Android/data/com.your.customemulator/files/wine_output.log";
 
     char box64Copy[1024];
     strncpy(box64Copy, box64_lib, sizeof(box64Copy) - 1);
     box64Copy[sizeof(box64Copy) - 1] = '\0';
     std::string nativeDir = dirname(box64Copy);
-    std::string loaderPath = nativeDir + "/libproot-loader.so";
 
-    std::string shellCmd = "export LD_LIBRARY_PATH=" + nativeDir +
-                           ":/system/lib64:/system/lib" +
-                           ":/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix" +
-                           ":/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"";
+    // Guest (Box64 + Wine) boot වීමට අවශ්‍ය Environment Variables
+    std::string shellCmd = "export DISPLAY=:0 && "
+                           "export WINEPREFIX=/root/.wine && "
+                           "export WINEDEBUG=-all,err+all && "
+                           "export BOX64_LD_LIBRARY_PATH=/opt/wine/lib/wine/x86_64-unix:/usr/lib/x86_64-linux-gnu && "
+                           "export LD_LIBRARY_PATH=" + nativeDir + ":" + internalFilesDir +
+                           ":/system/lib64:/system/lib:/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && "
+                           "if [ -f " + internalFilesDir + "/libandroid-shmem.so ]; then export LD_PRELOAD=" + internalFilesDir + "/libandroid-shmem.so; fi && "
+                           "exec \"$@\"";
 
     char* const argv[] = {
             (char*)proot_lib,
@@ -64,12 +112,13 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             nullptr
     };
 
+    LOGI("Starting Termux PRoot via Memfd...");
+
     pid_t pid = fork();
 
     if (pid == 0) {
         int logFd = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
         if (logFd < 0) {
-            // External storage අවසර නැතිනම් internal files වෙත fallback වීම
             logPath = internalFilesDir + "/wine_output.log";
             logFd = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
         }
@@ -79,15 +128,18 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             close(logFd);
         }
 
-        setenv("LD_LIBRARY_PATH", nativeDir.c_str(), 1);
+        // libtalloc.so.2 සොයාගැනීමට host LD_LIBRARY_PATH සැකසීම
+        std::string hostLdPath = nativeDir + ":" + internalFilesDir;
+        setenv("LD_LIBRARY_PATH", hostLdPath.c_str(), 1);
         setenv("PROOT_TMP_DIR", internalFilesDir.c_str(), 1);
-        // Android 10+ noexec bypass කිරීමට native lib folder එකේ ඇති loader එක පෙන්වීම
-        setenv("PROOT_LOADER", loaderPath.c_str(), 1);
 
-        execve(proot_lib, argv, environ);
+        // Termux PRoot සඳහා android noexec bypass flag
+        setenv("PROOT_NO_SECCOMP", "1", 1);
 
-        fprintf(stderr, "execve failed! errno=%d (%s)\n", errno, strerror(errno));
-        exit(127);
+        execute_memfd(proot_lib, argv);
+
+        // Multithreaded fork එකකදී exit() වෙනුවට _exit() භාවිතා කිරීමෙන් SIGSEGV වළක්වයි
+        _exit(127);
 
     } else if (pid > 0) {
         int status;
@@ -98,7 +150,7 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             LOGE("Proot killed by signal: %d", sig);
             FILE *f = fopen(logPath.c_str(), "a");
             if (f) {
-                fprintf(f, "\n[JNI ERROR] Proot process killed by signal: %d (%s)\n", sig, strsignal(sig));
+                fprintf(f, "\n[JNI ERROR] Proot killed by signal: %d (%s)\n", sig, strsignal(sig));
                 fclose(f);
             }
         } else if (WIFEXITED(status)) {
