@@ -26,82 +26,94 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
     const char *box64_lib = env->GetStringUTFChars(jArg3, nullptr);
     const char *installer = env->GetStringUTFChars(jArg4, nullptr);
 
-    std::string logPath = "/data/data/com.your.customemulator/files/wine_output.log";
-    
+    std::string appFilesDir = "/data/data/com.your.customemulator/files";
+    std::string logPath = appFilesDir + "/wine_output.log";
+
     char box64Copy[1024];
-    strncpy(box64Copy, box64_lib, sizeof(box64Copy));
+    strncpy(box64Copy, box64_lib, sizeof(box64Copy) - 1);
+    box64Copy[sizeof(box64Copy) - 1] = '\0';
     std::string nativeDir = dirname(box64Copy);
 
-    // Box64 සහ Wine සඳහා අවශ්‍ය පරිසරය සකස් කිරීම
-    std::string shellCmd = "export LD_LIBRARY_PATH=" + nativeDir + 
+    // Guest (Box64 + Wine) සඳහා LD_LIBRARY_PATH සකස් කිරීම
+    std::string shellCmd = "export LD_LIBRARY_PATH=" + nativeDir +
                            ":/system/lib64:/system/lib" +
                            ":/usr/lib/x86_64-linux-gnu:/opt/wine/lib:/opt/wine/lib/wine/x86_64-unix" +
                            ":/usr/lib/aarch64-linux-gnu:/lib/aarch64-linux-gnu:/usr/lib:/lib && exec \"$@\"";
 
     char* const argv[] = {
-            (char*)proot_lib, 
-            (char*)"--link2symlink", 
+            (char*)proot_lib,
+            (char*)"--link2symlink",
             (char*)"-0",
-            (char*)"-r", (char*)rootfs, 
-            (char*)"-b", (char*)"/system", 
+            (char*)"-r", (char*)rootfs,
+            (char*)"-b", (char*)"/system",
             (char*)"-b", (char*)"/apex",
-            (char*)"-b", (char*)"/vendor", 
-            (char*)"-b", (char*)"/dev", 
+            (char*)"-b", (char*)"/vendor",
+            (char*)"-b", (char*)"/dev",
             (char*)"-b", (char*)"/proc",
-            (char*)"-b", (char*)"/sys", 
-            (char*)"-b", (char*)"/data", 
+            (char*)"-b", (char*)"/sys",
+            (char*)"-b", (char*)"/data",
             (char*)"-w", (char*)"/",
-            (char*)"/system/bin/sh", 
-            (char*)"-c", 
-            (char*)shellCmd.c_str(), 
-            (char*)"sh",      
-            (char*)box64_lib, 
-            (char*)"/opt/wine/bin/wine64", 
-            (char*)installer, 
+            (char*)"/system/bin/sh",
+            (char*)"-c",
+            (char*)shellCmd.c_str(),
+            (char*)"sh",
+            (char*)box64_lib,
+            (char*)"/opt/wine/bin/wine64",
+            (char*)installer,
             nullptr
     };
 
     LOGI("Starting PRoot directly from native library directory...");
-    
+
     pid_t pid = fork();
-    
+
     if (pid == 0) {
         // Child Process
         int logFd = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
         if (logFd >= 0) {
-            dup2(logFd, STDOUT_FILENO); 
-            dup2(logFd, STDERR_FILENO); 
+            dup2(logFd, STDOUT_FILENO);
+            dup2(logFd, STDERR_FILENO);
             close(logFd);
         } else {
             LOGE("Failed to open log file! errno=%d", errno);
         }
 
-        // 🔥 Seccomp block වීම වළක්වා ගැනීමට කෙලින්ම execve භාවිතය
+        // libproot.so ආරම්භ වන විට libtalloc.so.2 සොයාගැනීමට host LD_LIBRARY_PATH සැකසීම
+        setenv("LD_LIBRARY_PATH", nativeDir.c_str(), 1);
+
+        // Android වල /tmp නොමැති නිසා PRoot (--link2symlink) සඳහා writable temp folder එකක් දීම
+        setenv("PROOT_TMP_DIR", appFilesDir.c_str(), 1);
+
+        // Seccomp block වීම වළක්වා ගැනීමට කෙලින්ම execve භාවිතය
         execve(proot_lib, argv, environ);
-        
+
         // execve අසාර්ථක වුවහොත් පමණක් පහත code එක ක්‍රියාත්මක වේ
         LOGE("execve failed! errno=%d (%s)", errno, strerror(errno));
         exit(127);
-        
+
     } else if (pid > 0) {
         // Parent Process
         int status;
         waitpid(pid, &status, 0);
-        
+
         if (WIFSIGNALED(status)) {
             LOGE("Proot killed by signal: %d", WTERMSIG(status));
         } else if (WIFEXITED(status)) {
             LOGI("Proot exited with code: %d", WEXITSTATUS(status));
         }
-        
+
         env->ReleaseStringUTFChars(jArg1, rootfs);
         env->ReleaseStringUTFChars(jArg2, proot_lib);
         env->ReleaseStringUTFChars(jArg3, box64_lib);
         env->ReleaseStringUTFChars(jArg4, installer);
-        
+
         return WIFEXITED(status) ? WEXITSTATUS(status) : 255;
     } else {
         LOGE("Fork failed!");
+        env->ReleaseStringUTFChars(jArg1, rootfs);
+        env->ReleaseStringUTFChars(jArg2, proot_lib);
+        env->ReleaseStringUTFChars(jArg3, box64_lib);
+        env->ReleaseStringUTFChars(jArg4, installer);
         return -1;
     }
 }
