@@ -85,10 +85,9 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
     std::string loaderPath = nativeDir + "/libproot-loader.so";
     std::string loader32Path = nativeDir + "/libproot-loader32.so";
 
-    // /linkerconfig permission denied මඟහැරීමට ld.config.txt කෙලින්ම rootfs තුළට copy කිරීම
     copyLinkerConfigToRootfs(rootfs);
 
-    // Bionic (libbox64.so) සඳහා Android paths පමණක් LD_LIBRARY_PATH වෙත දී, x86_64 libs සඳහා BOX64_LD_LIBRARY_PATH භාවිතය
+    // /data/user/0/.../files වෙතින් LD_PRELOAD කිරීම ඉවත් කර ඇත (linker64 SIGTRAP වළක්වයි)
     std::string shellCmd = "export HOME=/root && "
                            "export USER=root && "
                            "export TMPDIR=/tmp && "
@@ -96,18 +95,20 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
                            "export WINEPREFIX=\"" + wineprefix + "\" && "
                            "export WINESERVER=/opt/wine/bin/wineserver && "
                            "export WINELOADER=\"" + wine_path + "\" && "
-                           "export WINEDEBUG=-all,err+all && "
+                           "export WINEDEBUG=-all,err+all,fixme-all && "
                            "export BOX64_LOG=1 && "
                            "export BOX64_NOBANNER=0 && "
+                           "export BOX64_SHOWSEGV=1 && "
+                           "export BOX64_SHOWBT=1 && "
                            "export BOX64_PATH=/opt/wine/bin && "
-                           "export BOX64_LD_LIBRARY_PATH=/opt/wine/lib/wine/x86_64-unix:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu && "
-                           "export LD_LIBRARY_PATH=" + nativeDir + ":" + internalFilesDir +
+                           "export BOX64_LD_LIBRARY_PATH=/opt/wine/lib/wine/x86_64-unix:/opt/wine/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu && "
+                           "export LD_LIBRARY_PATH=" + nativeDir +
                            ":/apex/com.android.runtime/lib64/bionic:/system/lib64:/system/lib && "
-                           "echo '[GUEST] Testing Box64 binary...' >&2 && "
-                           "\"" + box64_lib + "\" --version >&2 && "
-                           "if [ -f " + internalFilesDir + "/libandroid-shmem.so ]; then "
-                           "export LD_PRELOAD=" + internalFilesDir + "/libandroid-shmem.so; "
+                           "if [ -f " + nativeDir + "/libandroid-shmem.so ]; then "
+                           "export LD_PRELOAD=" + nativeDir + "/libandroid-shmem.so; "
                            "fi && "
+                           "echo '[GUEST] Checking /opt/wine/bin files...' >&2 && "
+                           "ls -l /opt/wine/bin/ >&2 && "
                            "echo '[GUEST] Launching Wine via Box64...' >&2 && "
                            "exec \"$@\"";
 
@@ -157,15 +158,11 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
             close(logFd);
         }
 
-        bool hasLoader = (access(loaderPath.c_str(), F_OK) == 0);
-        fprintf(stderr, "[JNI CHECK] libproot-loader.so exists: %s (%s)\n",
-                hasLoader ? "YES" : "NO", loaderPath.c_str());
-
         std::string hostLdPath = nativeDir + ":" + internalFilesDir;
         setenv("LD_LIBRARY_PATH", hostLdPath.c_str(), 1);
         setenv("PROOT_TMP_DIR", internalFilesDir.c_str(), 1);
 
-        if (hasLoader) {
+        if (access(loaderPath.c_str(), F_OK) == 0) {
             setenv("PROOT_LOADER", loaderPath.c_str(), 1);
         }
         if (access(loader32Path.c_str(), F_OK) == 0) {
@@ -181,17 +178,23 @@ Java_com_your_customemulator_MainActivity_runProotJNI(JNIEnv *env, jobject /* th
         int status;
         waitpid(pid, &status, 0);
 
-        if (WIFSIGNALED(status)) {
-            int sig = WTERMSIG(status);
-            LOGE("Proot killed by signal: %d", sig);
-            FILE *f = fopen(logPath.c_str(), "a");
-            if (f) {
+        FILE *f = fopen(logPath.c_str(), "a");
+        if (f) {
+            if (WIFSIGNALED(status)) {
+                int sig = WTERMSIG(status);
+                LOGE("Proot killed by signal: %d", sig);
                 fprintf(f, "\n[JNI ERROR] Proot killed by signal: %d (%s)\n", sig, strsignal(sig));
-                fclose(f);
+            } else if (WIFEXITED(status)) {
+                LOGI("Proot exited with code: %d", WEXITSTATUS(status));
+                fprintf(f, "\n[JNI INFO] Proot exited with code: %d\n", WEXITSTATUS(status));
             }
-        } else if (WIFEXITED(status)) {
-            LOGI("Proot exited with code: %d", WEXITSTATUS(status));
+            fprintf(f, "\n--- LAST 100 LOGCAT LINES ---\n");
+            fclose(f);
         }
+
+        // Bionic linker64 / libc / SELinux fatal errors සියල්ල බලාගැනීමට logcat 100 lines එකතු කිරීම
+        std::string logcatCmd = "logcat -d -v threadtime -t 100 >> \"" + logPath + "\" 2>&1";
+        system(logcatCmd.c_str());
 
         return WIFEXITED(status) ? WEXITSTATUS(status) : (128 + WTERMSIG(status));
     } else {
